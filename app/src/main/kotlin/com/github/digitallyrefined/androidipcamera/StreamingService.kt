@@ -194,11 +194,10 @@ class StreamingService : LifecycleService() {
         val cam = camera ?: return
         lifecycleScope.launch(Dispatchers.Main) {
             try {
-                // Point at center (0.5, 0.5)
                 val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
                 val point = factory.createPoint(0.5f, 0.5f)
                 
-                // Clear any manual exposure/focus overrides from interop
+                // 1. Temporarily clear manual overrides to allow AF/AE to work
                 val camera2Control = Camera2CameraControl.from(cam.cameraControl)
                 camera2Control.captureRequestOptions = CaptureRequestOptions.Builder().build()
                 
@@ -206,10 +205,19 @@ class StreamingService : LifecycleService() {
                     .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
                 
-                cam.cameraControl.startFocusAndMetering(action)
-                Log.i(TAG, "Force Auto Focus triggered")
+                Log.i(TAG, "Force Auto Focus: Triggering AF/AE...")
+                val result = cam.cameraControl.startFocusAndMetering(action)
+                
+                // 2. Once the action is triggered (or after a short delay), restore manual settings
+                // We use a listener to ensure we don't fight with the metering action immediately
+                result.addListener({
+                    Log.i(TAG, "Force Auto Focus: Action completed, restoring manual settings")
+                    applyCamera2InteropSettings()
+                }, ContextCompat.getMainExecutor(this@StreamingService))
+                
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to trigger auto focus: ${e.message}")
+                applyCamera2InteropSettings() // Attempt to restore even on error
             }
         }
     }
@@ -752,127 +760,88 @@ class StreamingService : LifecycleService() {
         val cam = camera ?: return
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
-        // Torch / Flash
+        // Torch / Flash (Basic CameraX API)
         try {
             val torchPref = prefs.getString("camera_torch", "off") ?: "off"
             val isTorchOn = torchPref == "on"
-            
             setTorchEnabled(isTorchOn)
-            
-            // Also update ImageCapture flash mode
             imageCapture?.flashMode = if (isTorchOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
-
-            // Update max torch level and strength if supported
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                try {
-                    val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                    val cameraId = if (lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) {
-                        prefs.getString("camera_lens_id", null) ?: getCameraId(cameraManager)
-                    } else {
-                        getCameraId(cameraManager)
-                    }
-                    val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-                    
-                    val flashInfoStrengthMaxLevelField = CameraCharacteristics::class.java.getDeclaredField("FLASH_INFO_STRENGTH_MAXIMUM_LEVEL")
-                    @Suppress("UNCHECKED_CAST")
-                    val flashInfoStrengthMaxLevelKey = flashInfoStrengthMaxLevelField.get(null) as CameraCharacteristics.Key<Int>
-                    
-                    val maxLevel = characteristics.get(flashInfoStrengthMaxLevelKey) ?: 1
-                    prefs.edit().putInt("camera_torch_max_level", maxLevel).apply()
-
-                    if (isTorchOn) {
-                        val strength = prefs.getString("camera_torch_strength", "1")?.toIntOrNull() ?: 1
-                        setTorchStrength(strength)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to update torch capabilities: ${e.message}")
-                }
-            }
         } catch (e: Exception) { 
-            Log.e(TAG, "Torch error: ${e.message}", e) 
+            Log.e(TAG, "Torch basic error: ${e.message}") 
         }
 
-        // Zoom
+        // Zoom (Basic CameraX API)
         val requestedZoomFactor = prefs.getString("camera_zoom", "1.0")?.toFloatOrNull() ?: 1.0f
         cam.cameraControl.setZoomRatio(requestedZoomFactor)
 
-        // Exposure
+        // Exposure Compensation (Basic CameraX API)
         val exposureValue = prefs.getString("camera_exposure", "0")?.toIntOrNull() ?: 0
         cam.cameraControl.setExposureCompensationIndex(exposureValue)
 
-        // Focus
-        val focusMode = prefs.getString("camera_focus_mode", "auto") ?: "auto"
-        if (focusMode == "manual") {
-            val focusDistance = prefs.getFloat("camera_focus_distance", 0f)
-            setFocusManual(focusDistance)
-        }
+        // Apply Unified Camera2 Interop Settings (Focus, ISO, Shutter, Torch Strength)
+        applyCamera2InteropSettings()
+    }
 
-        // Manual Exposure (ISO/Shutter)
-        val exposureMode = prefs.getString("camera_exposure_mode", "auto") ?: "auto"
-        if (exposureMode == "manual") {
-            val iso = prefs.getInt("camera_iso", 400)
-            val shutter = prefs.getLong("camera_shutter", 20000000L) // 1/50s default
-            setExposureManual(iso, shutter)
+    private fun applyCamera2InteropSettings() {
+        val cam = camera ?: return
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        
+        try {
+            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+            val builder = CaptureRequestOptions.Builder()
+
+            // 1. Manual Focus
+            val focusMode = prefs.getString("camera_focus_mode", "auto") ?: "auto"
+            if (focusMode == "manual") {
+                val distance = prefs.getFloat("camera_focus_distance", 0f)
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+                builder.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
+            }
+
+            // 2. Manual Exposure (ISO/Shutter)
+            val exposureMode = prefs.getString("camera_exposure_mode", "auto") ?: "auto"
+            if (exposureMode == "manual") {
+                val iso = prefs.getInt("camera_iso", 400)
+                val shutterNs = prefs.getLong("camera_shutter", 20000000L)
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
+                builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterNs)
+            }
+
+            // 3. Torch Strength (API 33+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    val flashStrengthLevelField = CaptureRequest::class.java.getDeclaredField("FLASH_STRENGTH_LEVEL")
+                    @Suppress("UNCHECKED_CAST")
+                    val flashStrengthLevelKey = flashStrengthLevelField.get(null) as CaptureRequest.Key<Int>
+                    
+                    val strength = prefs.getString("camera_torch_strength", "1")?.toIntOrNull() ?: 1
+                    builder.setCaptureRequestOption(flashStrengthLevelKey, strength)
+                    
+                    val torchPref = prefs.getString("camera_torch", "off")
+                    if (torchPref == "on") {
+                        builder.setCaptureRequestOption(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
+                    }
+                } catch (_: Exception) {}
+            }
+
+            camera2Control.captureRequestOptions = builder.build()
+            Log.d(TAG, "Applied unified Camera2 settings: Focus=$focusMode, Exposure=$exposureMode")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to apply Camera2 interop settings: ${e.message}")
         }
     }
 
     private fun setExposureManual(iso: Int, shutterNs: Long) {
-        val cam = camera ?: return
-        try {
-            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
-            val builder = CaptureRequestOptions.Builder()
-                .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
-                .setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
-                .setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterNs)
-            
-            camera2Control.captureRequestOptions = builder.build()
-            Log.d(TAG, "Manual exposure set: ISO=$iso, Shutter=${shutterNs}ns")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to set manual exposure: ${e.message}")
-        }
+        applyCamera2InteropSettings()
     }
 
     private fun setFocusManual(distance: Float) {
-        val cam = camera ?: return
-        try {
-            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
-            val builder = CaptureRequestOptions.Builder()
-                .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
-                .setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
-            
-            camera2Control.captureRequestOptions = builder.build()
-            Log.d(TAG, "Manual focus set to distance: $distance")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to set manual focus: ${e.message}")
-        }
+        applyCamera2InteropSettings()
     }
 
     private fun setTorchStrength(level: Int) {
-        val cam = camera ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            try {
-                val camera2Control = Camera2CameraControl.from(cam.cameraControl)
-                
-                // Use reflection to access FLASH_STRENGTH_LEVEL to avoid unresolved reference at compile time
-                val flashStrengthLevelField = CaptureRequest::class.java.getDeclaredField("FLASH_STRENGTH_LEVEL")
-                @Suppress("UNCHECKED_CAST")
-                val flashStrengthLevelKey = flashStrengthLevelField.get(null) as CaptureRequest.Key<Int>
-                
-                val builder = CaptureRequestOptions.Builder()
-                    .setCaptureRequestOption(flashStrengthLevelKey, level)
-                
-                // If torch is ON, we might need to explicitly ensure FLASH_MODE is TORCH in the options
-                val torchPref = PreferenceManager.getDefaultSharedPreferences(this).getString("camera_torch", "off")
-                if (torchPref == "on") {
-                    builder.setCaptureRequestOption(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
-                }
-                
-                camera2Control.captureRequestOptions = builder.build()
-                Log.d(TAG, "Torch strength set to $level (Torch: $torchPref)")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to set torch strength: ${e.message}")
-            }
-        }
+        applyCamera2InteropSettings()
     }
 
     private fun handleRemoteControl(key: String, value: String) {
@@ -962,58 +931,29 @@ class StreamingService : LifecycleService() {
             "focus_mode" -> {
                 if (value in listOf("auto", "manual")) {
                     prefs.edit().putString("camera_focus_mode", value).apply()
-                    launchMain {
-                        if (value == "auto") {
-                            // Reset to auto focus
-                            val camera2Control = camera?.let { Camera2CameraControl.from(it.cameraControl) }
-                            camera2Control?.captureRequestOptions = CaptureRequestOptions.Builder().build()
-                        } else {
-                            val dist = prefs.getFloat("camera_focus_distance", 0f)
-                            setFocusManual(dist)
-                        }
-                    }
+                    launchMain { applyCamera2InteropSettings() }
                 }
             }
             "focus_distance" -> {
                 val distance = value.toFloatOrNull() ?: return
                 prefs.edit().putFloat("camera_focus_distance", distance).apply()
-                launchMain { setFocusManual(distance) }
+                launchMain { applyCamera2InteropSettings() }
             }
             "exposure_mode" -> {
                 if (value in listOf("auto", "manual")) {
                     prefs.edit().putString("camera_exposure_mode", value).apply()
-                    launchMain {
-                        if (value == "auto") {
-                            // Reset to auto exposure
-                            val camera2Control = camera?.let { Camera2CameraControl.from(it.cameraControl) }
-                            camera2Control?.captureRequestOptions = CaptureRequestOptions.Builder().build()
-                        } else {
-                            val iso = prefs.getInt("camera_iso", 400)
-                            val shutter = prefs.getLong("camera_shutter", 20000000L)
-                            setExposureManual(iso, shutter)
-                        }
-                    }
+                    launchMain { applyCamera2InteropSettings() }
                 }
             }
             "iso" -> {
                 val iso = value.toIntOrNull() ?: return
                 prefs.edit().putInt("camera_iso", iso).apply()
-                launchMain {
-                    if (prefs.getString("camera_exposure_mode", "auto") == "manual") {
-                        val shutter = prefs.getLong("camera_shutter", 20000000L)
-                        setExposureManual(iso, shutter)
-                    }
-                }
+                launchMain { applyCamera2InteropSettings() }
             }
             "shutter" -> {
                 val shutter = value.toLongOrNull() ?: return
                 prefs.edit().putLong("camera_shutter", shutter).apply()
-                launchMain {
-                    if (prefs.getString("camera_exposure_mode", "auto") == "manual") {
-                        val iso = prefs.getInt("camera_iso", 400)
-                        setExposureManual(iso, shutter)
-                    }
-                }
+                launchMain { applyCamera2InteropSettings() }
             }
             "autofocus" -> {
                 launchMain { triggerAutoFocus() }
