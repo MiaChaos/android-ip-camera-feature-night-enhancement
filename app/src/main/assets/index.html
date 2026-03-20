@@ -477,10 +477,17 @@
             </div>
 
             <!-- 3. Digital Gain Boost -->
-            <div style="margin-bottom: 10px;">
+            <div style="margin-bottom: 20px;">
               <label>Shadow Boost (Digital Gain) <span class='val-badge' id='gainVal'>0%</span></label>
               <input id="gainSlider" type='range' min='0' max='200' step='5' value='0' oninput='updateNightSettings()'>
               <p style="font-size: 10px; color: #888;">Amplifies dark pixels using software curves.</p>
+            </div>
+
+            <!-- 4. Pure Monochrome Mode -->
+            <div style="margin-bottom: 10px;">
+              <label>Pure Monochrome Mode</label>
+              <button id="monoBtn" class="btn btn-action" style="width: 100%; background: #444;" onclick="toggleMonochrome()">Enable Monochrome</button>
+              <p style="font-size: 10px; color: #888;">Removes color noise in extreme low light.</p>
             </div>
 
           </div>
@@ -555,6 +562,7 @@
       let nightVisionEnabled = false;
       let nightAvgFrames = 1;
       let nightGain = 0;
+      let isMonochrome = false;
       let frameBuffer = [];
       const nightProcessingCanvas = document.createElement('canvas');
       const nightProcessingCtx = nightProcessingCanvas.getContext('2d');
@@ -638,6 +646,20 @@
         const shutterSec = (1 / (shutter / 1000000000)).toFixed(0);
         document.getElementById('shutterVal').textContent = shutterMs + 'ms';
         document.getElementById('shutterLabel').textContent = 'Approx. 1/' + shutterSec + 's exposure';
+      }
+
+      function toggleMonochrome() {
+        isMonochrome = !isMonochrome;
+        const btn = document.getElementById('monoBtn');
+        if (isMonochrome) {
+          btn.textContent = 'Disable Monochrome';
+          btn.style.background = '#007AFF';
+          btn.classList.add('active');
+        } else {
+          btn.textContent = 'Enable Monochrome';
+          btn.style.background = '#444';
+          btn.classList.remove('active');
+        }
       }
 
       function toggleGallery() {
@@ -1222,6 +1244,17 @@
               d[i+2] = Math.min(255, d[i+2] * factor); // B
             }
             ctx.putImageData(gainData, dx, dy);
+          }
+
+          // Night Enhancement: Pure Monochrome Mode
+          if (isMonochrome) {
+            const monoData = ctx.getImageData(dx, dy, dw, dh);
+            const d = monoData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const avg = (d[i] + d[i+1] + d[i+2]) / 3;
+              d[i] = d[i+1] = d[i+2] = avg;
+            }
+            ctx.putImageData(monoData, dx, dy);
           }
 
           // Memory Management: Close the previous frame's bitmap if it's not in the averaging buffer

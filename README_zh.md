@@ -34,18 +34,7 @@
 - **网络背压处理**: 智能丢帧机制，防止在弱网环境下由于数据堆积导致的手机发热和 App 闪退。
 - **独立旋转设置**: 前置和后置镜头可分别设置不同的旋转角度。
 
-## 安装说明
-![桌面浏览器界面](screenshot.webp)
 
-<div align="center">
-<a href="https://github.com/DigitallyRefined/android-ip-camera/releases">
-<img src="https://user-images.githubusercontent.com/69304392/148696068-0cfea65d-b18f-4685-82b5-329a330b1c0d.png"
-alt="在 GitHub 上下载" align="center" height="80" /></a>
-
-<a href="https://github.com/ImranR98/Obtainium">
-<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/refs/heads/main/assets/graphics/badge_obtainium.png"
-alt="通过 Obtainium 获取" align="center" height="54" /></a>
-</div>
 
 ## 标准基础功能 (Legacy)
 
