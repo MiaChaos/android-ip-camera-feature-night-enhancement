@@ -1,0 +1,65 @@
+# Android IP Camera (增强版)
+
+[![下载量](https://img.shields.io/github/downloads/DigitallyRefined/android-ip-camera/total.svg)](https://github.com/DigitallyRefined/android-ip-camera/releases)
+[![最新版本](https://img.shields.io/github/downloads/DigitallyRefined/android-ip-camera/latest/total.svg)](https://github.com/DigitallyRefined/android-ip-camera/releases)
+
+[English](README.md) | **中文**
+
+一款具备 **专业控制与夜视强化** 功能的 Android MJPEG IP 摄像头应用。
+
+## 全新增强功能 🚀
+
+此版本（Fork 分支）相比原项目进行了重大升级：
+
+### 🌙 深度夜视强化
+- **多帧叠加 (Temporal Frame Averaging)**：通过软件算法实现“长曝光”效果，在极暗环境下堆叠多帧画面以降低噪点并显著提升亮度。
+- **硬件级手动曝光**: 通过 Camera2 API 直接控制 **ISO** 和 **快门速度 (Shutter Speed)**，突破系统自动曝光的限制。
+- **数字细节增益 (Shadow Boost)**：应用非线性算法专门拉高暗部细节，同时抑制高光过曝。
+- **纯黑白模式**: 一键切换黑白，消除低光下的彩色杂质噪点。
+
+### 🎯 精准相机控制
+- **手动对焦锁定**: 滑动条精确控制对焦距离（从无穷远到微距），解决低光对焦反复失败的问题。
+- **🎯 强制自动对焦**: 网页端一键触发硬件 AF 重置，快速找回模糊画面的焦点。
+- **多镜头支持**: 完美适配多摄像头设备（如三星 S10），支持手动切换 **超广角**、**主摄** 和 **长焦** 镜头。
+- **高分辨率抓拍**: 独立的 Snapshot 画廊，实时触发传感器全像素拍照，获取远超串流画质的高清大图。
+
+### 🎛️ 现代化 Web 交互界面
+- **设备仪表盘**: 实时监控手机的 **电量**、**温度**、**对焦状态** 及 **运行时间**。
+- **缩放小地图 (Minimap)**：数字化变焦配合可拖动的小地图，精准定位缩放区域。
+- **运动监测系统**: 浏览器端像素级分析，支持视觉调试层和自定义警报音效（可调多种音色与音量）。
+- **模拟夜视滤镜**: 基于 CSS 的视觉增强，提升暗处画面的可读性。
+
+### ⚙️ 稳定性与性能加固
+- **GPU 显存管理**: 优化了浏览器端 Bitmap 回收机制，防止 24/7 长时间串流导致的页面崩溃。
+- **网络背压处理**: 智能丢帧机制，防止在弱网环境下由于数据堆积导致的手机发热和 App 闪退。
+- **独立旋转设置**: 前置和后置镜头可分别设置不同的旋转角度。
+
+## 安装说明
+![桌面浏览器界面](screenshot.webp)
+
+<div align="center">
+<a href="https://github.com/DigitallyRefined/android-ip-camera/releases">
+<img src="https://user-images.githubusercontent.com/69304392/148696068-0cfea65d-b18f-4685-82b5-329a330b1c0d.png"
+alt="在 GitHub 上下载" align="center" height="80" /></a>
+
+<a href="https://github.com/ImranR98/Obtainium">
+<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/refs/heads/main/assets/graphics/badge_obtainium.png"
+alt="通过 Obtainium 获取" align="center" height="54" /></a>
+</div>
+
+## 标准基础功能 (Legacy)
+
+- 🌎 **内置服务器**: 只需浏览器即可查看画面，无需安装额外客户端。
+- 📴 **熄屏推流**: 支持在显示器关闭的状态下后台持续运行。
+- 🛂 **安全防护**: 强制性的用户名和密码验证。
+- 🔐 **HTTPS/TLS**: 自动生成自签名证书，确保传输过程加密。
+
+## ⚠️ 安全警告
+
+如果您打算 24/7 全天候运行：
+- **电池安全**: 请确保手机电量不要始终保持在 100%，这可能导致电池鼓包甚至爆炸风险。如果手机有“充电至 80% 停止”的功能，请务必开启。
+- **过热风险**: 运行极高画质可能导致手机过热，建议根据设备散热能力调整分辨率和帧率。
+
+## HTTPS/TLS 证书说明
+
+应用在首次启动时会自动生成自签名证书。如果您拥有自己的域名，可以使用 [Let's Encrypt](https://letsencrypt.org) 生成受信任的证书，并在设置中更换，以消除浏览器的安全警告。

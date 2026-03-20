@@ -3,6 +3,8 @@
 [![downloads](https://img.shields.io/github/downloads/DigitallyRefined/android-ip-camera/total.svg)](https://github.com/DigitallyRefined/android-ip-camera/releases)
 [![downloads](https://img.shields.io/github/downloads/DigitallyRefined/android-ip-camera/latest/total.svg)](https://github.com/DigitallyRefined/android-ip-camera/releases)
 
+**English** | [中文](README_zh.md)
+
 An Android MJPEG IP Camera app with **Professional Control & Night Enhancement**.
 
 ## New & Enhanced Features 🚀
