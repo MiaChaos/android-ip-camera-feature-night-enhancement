@@ -14,3 +14,4 @@ signing.properties
 app/signing-key.jks
 certificates
 .venv
+.trae/
