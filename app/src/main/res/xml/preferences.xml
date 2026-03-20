@@ -32,4 +32,53 @@
             android:summary="Validate your certificate configuration"
             android:persistent="false" />
     </PreferenceCategory>
+
+    <PreferenceCategory android:title="Camera Settings">
+        <ListPreference
+            android:key="camera_resolution"
+            android:title="Resolution"
+            android:summary="Higher resolution requires more bandwidth"
+            android:entries="@array/resolution_entries"
+            android:entryValues="@array/resolution_values"
+            android:defaultValue="low" />
+        <EditTextPreference
+            android:key="camera_zoom"
+            android:title="Digital Zoom"
+            android:summary="Default 1.0 (0.5 - 2.0)"
+            android:defaultValue="1.0"
+            android:inputType="numberDecimal" />
+        <EditTextPreference
+            android:key="camera_exposure"
+            android:title="Exposure Compensation"
+            android:summary="Adjust brightness (-2 to +2)"
+            android:defaultValue="0"
+            android:inputType="numberSigned" />
+        <EditTextPreference
+            android:key="camera_contrast"
+            android:title="Contrast"
+            android:summary="Software-based contrast adjustment (-50 to 50)"
+            android:defaultValue="0"
+            android:inputType="numberSigned" />
+        <EditTextPreference
+            android:key="camera_torch_strength"
+            android:title="Flash Brightness"
+            android:summary="Adjust flash intensity (requires Android 13+)"
+            android:defaultValue="1"
+            android:inputType="number" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Stream Settings">
+        <EditTextPreference
+            android:key="stream_scale"
+            android:title="Output Scale"
+            android:summary="Scale output JPEG (0.5 - 2.0)"
+            android:defaultValue="1.0"
+            android:inputType="numberDecimal" />
+        <EditTextPreference
+            android:key="stream_delay"
+            android:title="Frame Interval (ms)"
+            android:summary="Delay between frames (10-1000)"
+            android:defaultValue="33"
+            android:inputType="number" />
+    </PreferenceCategory>
 </PreferenceScreen>

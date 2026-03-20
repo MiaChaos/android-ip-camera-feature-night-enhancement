@@ -307,6 +307,26 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 }
             }
+
+            findPreference<Preference>("camera_torch_strength")?.apply {
+                setOnPreferenceChangeListener { _, newValue ->
+                    val strength = (newValue as? String)?.toIntOrNull() ?: 1
+                    if (strength < 1) {
+                        Toast.makeText(requireContext(),
+                            "Strength must be at least 1",
+                            Toast.LENGTH_SHORT).show()
+                        return@setOnPreferenceChangeListener false
+                    }
+
+                    // Send broadcast to restart camera with new torch strength
+                    val intent = Intent("com.github.digitallyrefined.androidipcamera.RESTART_CAMERA").apply {
+                        setPackage(requireContext().packageName)
+                    }
+                    requireContext().sendBroadcast(intent)
+
+                    true
+                }
+            }
         }
 
         override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

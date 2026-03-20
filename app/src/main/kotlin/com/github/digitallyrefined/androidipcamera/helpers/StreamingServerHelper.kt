@@ -13,14 +13,11 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.preference.PreferenceManager
+import com.github.digitallyrefined.androidipcamera.StreamingService
 import com.github.digitallyrefined.androidipcamera.helpers.SecureStorage
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
@@ -290,7 +287,7 @@ class StreamingServerHelper(
                       }
                       return@launch
                   }
-                  onLog("Server started on port $streamPort (${if (certificatePath != null) "HTTPS" else "HTTP"})")
+                  onLog("Server started on port $streamPort (HTTPS)")
                   // Clear the starting flag now that server is running
                   synchronized(this@StreamingServerHelper) {
                       isStarting = false
@@ -468,7 +465,7 @@ class StreamingServerHelper(
                 return
             }
 
-            // Handle Control UI and Commands
+            // Handle Control UI
             if (uri == "/" || uri == "") {
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
                 val curCamera = prefs.getString("last_camera_facing", "back") ?: "back"
@@ -479,6 +476,29 @@ class StreamingServerHelper(
                 val curContrast = prefs.getString("camera_contrast", "0") ?: "0"
                 val curDelay = prefs.getString("stream_delay", "33") ?: "33"
                 val curTorch = prefs.getString("camera_torch", "off") ?: "off"
+                val curTorchStrength = prefs.getString("camera_torch_strength", "1")?.toIntOrNull() ?: 1
+                val maxTorchStrength = prefs.getInt("camera_torch_max_level", 1)
+                val curZoomFocusX = prefs.getFloat("camera_zoom_focus_x", 0.5f)
+                val curZoomFocusY = prefs.getFloat("camera_zoom_focus_y", 0.5f)
+                val curLensId = prefs.getString("camera_lens_id", "") ?: ""
+                val curFocusMode = prefs.getString("camera_focus_mode", "auto") ?: "auto"
+                val curFocusDistance = prefs.getFloat("camera_focus_distance", 0f)
+                val minFocusDistance = prefs.getFloat("camera_min_focus_distance", 0f)
+                val curExposureMode = prefs.getString("camera_exposure_mode", "auto") ?: "auto"
+                val curISO = prefs.getInt("camera_iso", 400)
+                val curShutter = prefs.getLong("camera_shutter", 20000000L)
+                val isoMin = prefs.getInt("camera_iso_min", 100)
+                val isoMax = prefs.getInt("camera_iso_max", 3200)
+                val shutterMin = prefs.getLong("camera_shutter_min", 100000L)
+                val shutterMax = prefs.getLong("camera_shutter_max", 1000000000L)
+
+                // Get lens list from service
+                val lenses = (context as? StreamingService)?.getBackLenses() ?: emptyList()
+                val lensesHtml = StringBuilder("<option value=''>Auto / Logical</option>")
+                lenses.forEach { (id, label) ->
+                    val selected = if (id == curLensId) "selected" else ""
+                    lensesHtml.append("<option value='$id' $selected>$label</option>")
+                }
 
                 val htmlTemplate = try {
                     context.assets.open("index.html").bufferedReader().use { it.readText() }
@@ -497,6 +517,27 @@ class StreamingServerHelper(
                     .replace("{{CUR_CONTRAST}}", curContrast)
                     .replace("{{CUR_DELAY}}", curDelay)
                     .replace("{{CUR_TORCH}}", curTorch)
+                    .replace("{{CUR_TORCH_STRENGTH}}", curTorchStrength.toString())
+                    .replace("{{MAX_TORCH_STRENGTH}}", maxTorchStrength.toString())
+                    .replace("{{CUR_ZOOM_FOCUS_X}}", curZoomFocusX.toString())
+                    .replace("{{CUR_ZOOM_FOCUS_Y}}", curZoomFocusY.toString())
+                    .replace("{{BACK_LENSES_OPTIONS}}", lensesHtml.toString())
+                    .replace("{{CUR_FOCUS_MODE}}", curFocusMode)
+                    .replace("{{CUR_FOCUS_DISTANCE}}", curFocusDistance.toString())
+                    .replace("{{MIN_FOCUS_DISTANCE}}", minFocusDistance.toString())
+                    .replace("{{AF_ACTIVE}}", if (curFocusMode == "auto") "active" else "")
+                    .replace("{{MF_ACTIVE}}", if (curFocusMode == "manual") "active" else "")
+                    .replace("{{MF_DISPLAY}}", if (curFocusMode == "manual") "block" else "none")
+                    .replace("{{CUR_EXPOSURE_MODE}}", curExposureMode)
+                    .replace("{{CUR_ISO}}", curISO.toString())
+                    .replace("{{CUR_SHUTTER}}", curShutter.toString())
+                    .replace("{{ISO_MIN}}", isoMin.toString())
+                    .replace("{{ISO_MAX}}", isoMax.toString())
+                    .replace("{{SHUTTER_MIN}}", shutterMin.toString())
+                    .replace("{{SHUTTER_MAX}}", shutterMax.toString())
+                    .replace("{{AE_ACTIVE}}", if (curExposureMode == "auto") "active" else "")
+                    .replace("{{ME_ACTIVE}}", if (curExposureMode == "manual") "active" else "")
+                    .replace("{{ME_DISPLAY}}", if (curExposureMode == "manual") "block" else "none")
 
                 writer.print("HTTP/1.1 200 OK\r\n")
                 writer.print("Content-Type: text/html\r\n")
@@ -507,6 +548,67 @@ class StreamingServerHelper(
                 return
             }
 
+            // Handle Snapshots (must be before generic query check)
+            if (uri.startsWith("/snapshot.jpg")) {
+                val service = context as? StreamingService
+                val snapshot = if (service != null) {
+                    try {
+                        withTimeout(5000) { // 5 second timeout for high-res capture
+                            suspendCoroutine<ByteArray?> { continuation ->
+                                service.takeHighResSnapshot { result ->
+                                    continuation.resume(result)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        onLog("Snapshot timeout or error: ${e.message}")
+                        service.getLatestSnapshot() // Fallback to low-res if high-res fails/times out
+                    }
+                } else {
+                    null
+                }
+
+                if (snapshot != null && snapshot.isNotEmpty()) {
+                    val headerStr = "HTTP/1.1 200 OK\r\n" +
+                                   "Content-Type: image/jpeg\r\n" +
+                                   "Content-Length: ${snapshot.size}\r\n" +
+                                   "Content-Disposition: attachment; filename=\"snapshot_${System.currentTimeMillis()}.jpg\"\r\n" +
+                                   "Connection: close\r\n\r\n"
+                    outputStream.write(headerStr.toByteArray(Charsets.UTF_8))
+                    outputStream.write(snapshot)
+                    outputStream.flush()
+                    // Delay before closing to ensure buffers are fully sent
+                    Thread.sleep(100)
+                } else {
+                    val error = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"
+                    outputStream.write(error.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
+                }
+                try { socket.close() } catch (_: Exception) {}
+                return
+            }
+
+            // Handle Device Status
+            if (uri.startsWith("/status")) {
+                val status = (context as? StreamingService)?.getDeviceStatus() ?: emptyMap()
+                val json = StringBuilder("{")
+                status.forEach { (k, v) -> 
+                    val valueStr = if (v is String) "\"$v\"" else v.toString()
+                    json.append("\"$k\":$valueStr,") 
+                }
+                if (json.length > 1) json.setLength(json.length - 1)
+                json.append("}")
+                
+                writer.print("HTTP/1.1 200 OK\r\n")
+                writer.print("Content-Type: application/json\r\n")
+                writer.print("Connection: close\r\n\r\n")
+                writer.print(json.toString())
+                writer.flush()
+                try { socket.close() } catch (_: Exception) {}
+                return
+            }
+
+            // Handle generic control commands via query params
             if (uri.contains("?")) {
                 val query = uri.substringAfter("?")
                 query.split("&").forEach { param ->
@@ -567,7 +669,7 @@ class StreamingServerHelper(
                     audioRecord.startRecording()
                     val pcmBuffer = ByteArray(bufferSize)
                     try {
-                        while (socket.isConnected && !socket.isClosed && appInForeground) {
+                        while (socket.isConnected && !socket.isClosed) {
                             val read = audioRecord.read(pcmBuffer, 0, pcmBuffer.size)
                             if (read <= 0) continue
                             writeChunk(outputStream, pcmBuffer, read)

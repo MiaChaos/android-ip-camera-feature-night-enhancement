@@ -355,7 +355,7 @@ class MainActivity : AppCompatActivity() {
         private val REQUIRED_PERMISSIONS = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             arrayOf(
                 Manifest.permission.CAMERA,
-                Manifest.permission.POST_NOTIFICATIONS
+                "android.permission.POST_NOTIFICATIONS"
             )
         } else {
             arrayOf(

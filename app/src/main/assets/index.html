@@ -25,10 +25,123 @@
         z-index: 10;
       }
 
+      .dashboard {
+        display: flex;
+        gap: 15px;
+        font-size: 12px;
+        color: #aaa;
+      }
+
+      .dashboard-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .dashboard-val {
+        color: #007AFF;
+        font-weight: bold;
+      }
+
       .main {
         display: flex;
         flex: 1;
         overflow: hidden;
+      }
+
+      .gallery-panel {
+        width: 200px;
+        background: #1a1a1a;
+        border-right: 1px solid #333;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        padding: 10px;
+        transition: transform 0.3s ease, width 0.3s ease;
+        position: relative;
+      }
+
+      .gallery-panel.collapsed {
+        width: 0;
+        padding: 0;
+        transform: translateX(-200px);
+      }
+
+      .gallery-toggle {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 24px;
+        height: 24px;
+        background: #333;
+        border: 1px solid #444;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #888;
+        z-index: 100;
+        font-size: 14px;
+      }
+
+      .gallery-panel.collapsed .gallery-toggle {
+        position: fixed;
+        left: 10px;
+        top: 60px;
+        border-radius: 4px;
+      }
+
+      .gallery-toggle:hover {
+        color: #fff;
+        background: #444;
+      }
+
+      .gallery-header {
+        font-size: 12px;
+        color: #888;
+        text-transform: uppercase;
+        margin-top: 5px;
+        margin-bottom: 15px;
+        text-align: left;
+        padding-right: 30px;
+      }
+
+      .gallery-item {
+        position: relative;
+        margin-bottom: 10px;
+        border-radius: 4px;
+        overflow: hidden;
+        border: 1px solid #444;
+        background: #000;
+        cursor: pointer;
+      }
+
+      .gallery-item img {
+        width: 100%;
+        display: block;
+      }
+
+      .gallery-item .delete-btn {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 20px;
+        height: 20px;
+        background: rgba(255, 59, 48, 0.8);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        font-size: 12px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2;
+      }
+
+      .gallery-item:hover .delete-btn {
+        background: #ff3b30;
       }
 
       .stream-container {
@@ -39,6 +152,49 @@
         justify-content: center;
         overflow: auto;
         position: relative;
+      }
+
+      /* Night Vision Filter */
+      .night-vision {
+        filter: grayscale(100%) brightness(1.5) contrast(2) sepia(100%) hue-rotate(100deg) saturate(5);
+      }
+
+      .night-vision-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 255, 0, 0.05);
+        pointer-events: none;
+        display: none;
+        z-index: 5;
+      }
+
+      .minimap-container {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        width: 160px;
+        height: auto; /* Allow dynamic height based on aspect ratio */
+        min-height: 40px;
+        background: rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        z-index: 100;
+        backdrop-filter: blur(5px);
+        overflow: hidden;
+        cursor: crosshair;
+        touch-action: none;
+        display: none;
+      }
+
+      .minimap-viewport {
+        position: absolute;
+        border: 2px solid #007AFF;
+        background: rgba(0, 122, 255, 0.2);
+        box-sizing: border-box;
+        pointer-events: none;
       }
 
       .controls-panel {
@@ -104,6 +260,20 @@
         width: 100%;
         margin-bottom: 20px;
         cursor: pointer;
+        height: 10px;
+        background: #333;
+        border-radius: 5px;
+        appearance: none;
+      }
+
+      input[type=range]::-webkit-slider-thumb {
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        background: #007AFF;
+        border-radius: 50%;
+        cursor: pointer;
+        border: 2px solid #fff;
       }
 
       input[type=number],
@@ -147,6 +317,14 @@
   <body>
     <div class='header'>
       <h2 style='margin:0;font-size:18px;'>Android IP Camera</h2>
+      
+      <div class="dashboard">
+        <div class="dashboard-item">🔋 <span id="dashBattery" class="dashboard-val">--%</span></div>
+        <div class="dashboard-item">🌡️ <span id="dashTemp" class="dashboard-val">--°C</span></div>
+        <div class="dashboard-item">🔍 <span id="dashFocus" class="dashboard-val">--</span></div>
+        <div class="dashboard-item">⏱️ <span id="dashUptime" class="dashboard-val">00:00</span></div>
+      </div>
+
       <div>
         <button id='fitBtn' class='btn active' onclick='setView("fit")'>Fit Screen</button>
         <button id='origBtn' class='btn' onclick='setView("original")'>Original Size</button>
@@ -154,9 +332,21 @@
     </div>
 
     <div class='main'>
+      <div class='gallery-panel' id='galleryPanel'>
+        <button class="gallery-toggle" onclick="toggleGallery()" title="Toggle Snapshots">📸</button>
+        <div class='gallery-header'>Snapshots</div>
+        <div id='galleryList'></div>
+      </div>
+
       <div class='stream-container' id='streamContainer'>
         <canvas id='streamCanvas'></canvas>
+        <div id="nvOverlay" class="night-vision-overlay"></div>
         <audio id="audioEl" preload="none" muted></audio>
+        
+        <!-- Minimap / Viewport Positioning -->
+        <div class="minimap-container" id="minimapContainer">
+          <div class="minimap-viewport" id="minimapViewport"></div>
+        </div>
       </div>
 
       <div class='controls-panel'>
@@ -169,11 +359,31 @@
             <button id='frontBtn' class='btn' style='width: 49%;' onclick='setCamera("front")'>Front</button>
           </div>
 
+          <div id="lensSelectGroup" style="margin-bottom: 15px; display: none;">
+            <label for="lensSelect">Specific Back Lens</label>
+            <select id="lensSelect" onchange='fetch("/?lens_id="+this.value)'>
+              {{BACK_LENSES_OPTIONS}}
+            </select>
+          </div>
+
           <button class='btn btn-action' onclick='fetch("/?rotate=90")'>Rotate 90&deg;</button>
 
           <div style="margin-bottom: 15px">
             <button id="muteBtn" class="btn btn-action" style='width: 49%;'>🔇 Unmute Audio</button>
             <button id="flashBtn" class="btn btn-action" style='width: 49%;'>💡 Flash On</button>
+          </div>
+
+          <div style="margin-bottom: 15px">
+            <button id="snapshotBtn" class="btn btn-action" style='width: 49%;' onclick='takeSnapshot()'>📸 Snapshot</button>
+            <button id="nvBtn" class="btn btn-action" style='width: 49%;' onclick='toggleNightVision()'>🌙 Night Vision</button>
+          </div>
+
+          <div id="torchStrengthContainer" style="display: none; margin-top: 10px;">
+            <div id="torchSliderGroup">
+              <label for="torchStrength">Flash Brightness <span class='val-badge' id='torchVal'>{{CUR_TORCH_STRENGTH}}</span></label>
+              <input id="torchStrength" type='range' min='1' max='{{MAX_TORCH_STRENGTH}}' step='1' value='{{CUR_TORCH_STRENGTH}}' oninput='document.getElementById("torchVal").innerText=this.value;fetch("/?torch_strength="+this.value)'>
+            </div>
+            <p id="torchSupportNotice" style="font-size: 11px; color: #888; margin-top: 5px;"></p>
           </div>
 
           <div id="avDelayContainer">
@@ -189,7 +399,17 @@
           </select>
 
           <label for="zoom">Zoom <span class='val-badge' id='zoomVal'>{{CUR_ZOOM}}x</span></label>
-          <input id="zoom" type='range' min='1' max='8' step='0.1' value='{{CUR_ZOOM}}' oninput='document.getElementById("zoomVal").innerText=this.value+"x";fetch("/?zoom="+this.value)'>
+          <input id="zoom" type='range' min='1' max='8' step='0.1' value='{{CUR_ZOOM}}' oninput='
+            const v = parseFloat(this.value);
+            document.getElementById("zoomVal").innerText = v + "x"; 
+            if (v <= 1.0) {
+              zoomFocusX = 0.5;
+              zoomFocusY = 0.5;
+              fetch("/?zoom_focus=0.500,0.500");
+            }
+            updateMinimapViewport(); 
+            fetch("/?zoom=" + v);
+          '>
 
           <label for="scale">Scale <span class='val-badge' id='scaleVal'>{{CUR_SCALE}}x</span></label>
           <input id="scale" type='range' min='0.5' max='2.0' step='0.1' value='{{CUR_SCALE}}' oninput='setView("original"); document.getElementById("scaleVal").innerText=this.value+"x";fetch("/?scale="+this.value)'>
@@ -200,8 +420,110 @@
           <label for="contrast">Contrast <span class='val-badge' id='contVal'>{{CUR_CONTRAST}}</span></label>
           <input id="contrast" type='range' min='-50' max='50' step='10' value='{{CUR_CONTRAST}}' oninput='document.getElementById("contVal").innerText=this.value;fetch("/?contrast="+this.value)'>
 
+          <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 15px;">
+            <label>Focus Mode <span class='val-badge' id='focusModeVal'>{{CUR_FOCUS_MODE}}</span></label>
+            <div style="margin-bottom: 10px">
+              <button id='afBtn' class='btn {{AF_ACTIVE}}' style='width: 49%;' onclick='setFocusMode("auto")'>Auto</button>
+              <button id='mfBtn' class='btn {{MF_ACTIVE}}' style='width: 49%;' onclick='setFocusMode("manual")'>Manual</button>
+            </div>
+            
+            <button id="afTriggerBtn" class="btn btn-action" style="width: 100%; margin-bottom: 10px; background: #34c759;" onclick="triggerAutoFocus()">🎯 Force Auto Focus</button>
+            
+            <div id="manualFocusGroup" style="display: {{MF_DISPLAY}}">
+              <div id="focusUnsupported" style="display: none; color: #ff9500; font-size: 12px; margin-bottom: 10px;">
+                ⚠️ Manual focus not supported on this lens.
+              </div>
+              <div id="focusControls" style="pointer-events: auto;">
+                <label for="focusDist">Focus Distance <span class='val-badge' id='focusDistVal'>{{CUR_FOCUS_DISTANCE}}</span></label>
+                <input id="focusDist" type='range' min='0' max='{{MIN_FOCUS_DISTANCE}}' step='0.01' value='{{CUR_FOCUS_DISTANCE}}' oninput='updateFocusDist(this.value)'>
+                <p style="font-size: 10px; color: #888;">(0 = Infinity, Higher = Closer)</p>
+              </div>
+            </div>
+          </div>
+
           <label for="delay">Frame Delay (ms)</label>
           <input id="delay" type='number' min='10' max='1000' value='{{CUR_DELAY}}' onchange='fetch("/?delay="+this.value)'>
+        </div>
+
+        <div class='setting-group'>
+          <h3>Night Enhancement 🌙</h3>
+          <button id="nightToggle" class="btn btn-action" onclick="toggleNightPanel()">Expand Night Options ▾</button>
+          
+          <div id="nightPanel" style="display: none; padding-top: 10px; border-top: 1px solid #444;">
+            
+            <!-- 1. Temporal Frame Averaging -->
+            <div style="margin-bottom: 20px;">
+              <label>Long Exposure (Frame Avg) <span class='val-badge' id='avgVal'>OFF</span></label>
+              <input id="avgFrames" type='range' min='1' max='10' step='1' value='1' oninput='updateNightSettings()'>
+              <p style="font-size: 10px; color: #888;">Stacks frames to reduce noise and boost light. (Static scene only)</p>
+            </div>
+
+            <!-- 2. Manual Exposure Control -->
+            <div style="margin-bottom: 20px; padding: 10px; background: #1a1a1a; border-radius: 6px;">
+              <label>Manual Exposure (Hardware)</label>
+              <div style="margin-bottom: 10px; display: flex; gap: 5px;">
+                <button id='aeBtn' class='btn {{AE_ACTIVE}}' style='flex: 1;' onclick='setExposureMode("auto")'>Auto</button>
+                <button id='meBtn' class='btn {{ME_ACTIVE}}' style='flex: 1;' onclick='setExposureMode("manual")'>Manual</button>
+              </div>
+              
+              <div id="manualExposureGroup" style="display: {{ME_DISPLAY}}">
+                <label for="isoSlider">ISO <span class='val-badge' id='isoVal'>{{CUR_ISO}}</span></label>
+                <input id="isoSlider" type='range' min='{{ISO_MIN}}' max='{{ISO_MAX}}' step='10' value='{{CUR_ISO}}' oninput='updateExposure()'>
+                
+                <label for="shutterSlider">Shutter Speed <span class='val-badge' id='shutterVal'>--</span></label>
+                <input id="shutterSlider" type='range' min='{{SHUTTER_MIN}}' max='{{SHUTTER_MAX}}' step='100000' value='{{CUR_SHUTTER}}' oninput='updateExposure()'>
+                <p id="shutterLabel" style="font-size: 10px; color: #888;"></p>
+              </div>
+            </div>
+
+            <!-- 3. Digital Gain Boost -->
+            <div style="margin-bottom: 10px;">
+              <label>Shadow Boost (Digital Gain) <span class='val-badge' id='gainVal'>0%</span></label>
+              <input id="gainSlider" type='range' min='0' max='200' step='5' value='0' oninput='updateNightSettings()'>
+              <p style="font-size: 10px; color: #888;">Amplifies dark pixels using software curves.</p>
+            </div>
+
+          </div>
+        </div>
+
+        <div class='setting-group'>
+          <h3>Motion Detection</h3>
+          <label for="motionToggle">Status <span class='val-badge' id='motionState'>OFF</span></label>
+          <button id='motionToggle' class='btn btn-action' onclick='toggleMotion()'>Enable Motion Detection</button>
+          
+          <div id="motionControls" style="display: none;">
+            <label for="motionSensitivity">Sensitivity (Analysis Width) <span class='val-badge' id='sensVal'>32px</span></label>
+            <input id="motionSensitivity" type='range' min='8' max='512' step='8' value='32' oninput='updateMotionSettings()'>
+            
+            <label for="motionThreshold">Trigger Threshold <span class='val-badge' id='threshVal'>15%</span></label>
+            <input id="motionThreshold" type='range' min='1' max='100' step='1' value='15' oninput='updateMotionSettings()'>
+            
+            <!-- Sound Settings Collapsible -->
+            <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
+              <button class="btn" style="width: 100%; font-size: 12px; margin-bottom: 10px;" onclick="toggleSoundSettings()">🔊 Alert Sound Settings ▾</button>
+              <div id="soundSettings" style="display: none; padding: 10px; background: #1a1a1a; border-radius: 6px;">
+                <label for="alertType">Sound Type</label>
+                <select id="alertType" onchange="updateMotionSettings()">
+                  <option value="sine">Soft (Sine)</option>
+                  <option value="square">Digital (Square)</option>
+                  <option value="triangle">Mellow (Triangle)</option>
+                  <option value="sawtooth">Sharp (Sawtooth)</option>
+                  <option value="beep-low">Low Beep</option>
+                  <option value="beep-high">High Beep</option>
+                </select>
+                
+                <label for="alertVolume" style="margin-top: 10px;">Volume <span class='val-badge' id='volVal'>50%</span></label>
+                <input id="alertVolume" type='range' min='0' max='100' step='1' value='50' oninput='updateMotionSettings()'>
+                
+                <button class="btn" style="width: 100%; margin-top: 5px; background: #444;" onclick="playAlert(true)">Test Sound</button>
+              </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 15px;">
+                <canvas id="motionDebug" width="100" height="75" style="border: 2px solid #444; background: #000; border-radius: 4px; max-width: 100%;"></canvas>
+                <p style="font-size: 10px; color: #666; margin-top: 5px;">Analysis Preview (Red = Motion)</p>
+            </div>
+          </div>
         </div>
 
         <p class="notice">Some changes will momentarily restart the camera.</p>
@@ -216,6 +538,7 @@
       const streamContainer = document.getElementById('streamContainer');
       const avDelay = document.getElementById('avDelay');
       const avDelayVal = document.getElementById('avDelayVal');
+      const streamCanvas = document.getElementById('streamCanvas');
       const STREAM_SRC = '/stream';
       let videoDelayMs = 2500;
       let mjpegAbort = null;
@@ -225,6 +548,466 @@
       let drawing = false;
       let viewMode = 'fit';
       let torchState = ('{{CUR_TORCH}}' === 'on') ? 'on' : 'off';
+      let zoomFocusX = parseFloat('{{CUR_ZOOM_FOCUS_X}}') || 0.5;
+      let zoomFocusY = parseFloat('{{CUR_ZOOM_FOCUS_Y}}') || 0.5;
+      let isDraggingMinimap = false;
+      let lastMinimapFetch = 0;
+      let nightVisionEnabled = false;
+      let nightAvgFrames = 1;
+      let nightGain = 0;
+      let frameBuffer = [];
+      const nightProcessingCanvas = document.createElement('canvas');
+      const nightProcessingCtx = nightProcessingCanvas.getContext('2d');
+
+      function toggleNightVision() {
+        nightVisionEnabled = !nightVisionEnabled;
+        const canvas = document.getElementById('streamCanvas');
+        const overlay = document.getElementById('nvOverlay');
+        const btn = document.getElementById('nvBtn');
+        
+        if (nightVisionEnabled) {
+          canvas.classList.add('night-vision');
+          overlay.style.display = 'block';
+          btn.classList.add('active');
+          btn.textContent = '☀️ Normal Mode';
+        } else {
+          canvas.classList.remove('night-vision');
+          overlay.style.display = 'none';
+          btn.classList.remove('active');
+          btn.textContent = '🌙 Night Vision';
+        }
+      }
+
+      function toggleNightPanel() {
+        const panel = document.getElementById('nightPanel');
+        const btn = document.getElementById('nightToggle');
+        const isHidden = panel.style.display === 'none';
+        panel.style.display = isHidden ? 'block' : 'none';
+        btn.textContent = isHidden ? 'Collapse Night Options ▴' : 'Expand Night Options ▾';
+        if (isHidden) {
+          updateExposureLabel();
+        }
+      }
+
+      function updateNightSettings() {
+        const avg = parseInt(document.getElementById('avgFrames').value);
+        nightAvgFrames = avg;
+        document.getElementById('avgVal').textContent = avg > 1 ? avg + ' Frames' : 'OFF';
+        
+        const gain = parseInt(document.getElementById('gainSlider').value);
+        nightGain = gain;
+        document.getElementById('gainVal').textContent = gain + '%';
+      }
+
+      function setExposureMode(mode) {
+        fetch("/?exposure_mode=" + mode);
+        const aeBtn = document.getElementById('aeBtn');
+        const meBtn = document.getElementById('meBtn');
+        const group = document.getElementById('manualExposureGroup');
+        
+        if (mode === 'auto') {
+          aeBtn.classList.add('active');
+          meBtn.classList.remove('active');
+          group.style.display = 'none';
+        } else {
+          aeBtn.classList.remove('active');
+          meBtn.classList.add('active');
+          group.style.display = 'block';
+          updateExposureLabel();
+        }
+      }
+
+      let lastExpFetch = 0;
+      function updateExposure() {
+        const iso = document.getElementById('isoSlider').value;
+        const shutter = document.getElementById('shutterSlider').value;
+        
+        document.getElementById('isoVal').textContent = iso;
+        updateExposureLabel();
+        
+        const now = Date.now();
+        if (now - lastExpFetch > 100) {
+          lastExpFetch = now;
+          fetch("/?iso=" + iso + "&shutter=" + shutter).catch(() => {});
+        }
+      }
+
+      function updateExposureLabel() {
+        const shutter = document.getElementById('shutterSlider').value;
+        const shutterMs = (shutter / 1000000).toFixed(1);
+        const shutterSec = (1 / (shutter / 1000000000)).toFixed(0);
+        document.getElementById('shutterVal').textContent = shutterMs + 'ms';
+        document.getElementById('shutterLabel').textContent = 'Approx. 1/' + shutterSec + 's exposure';
+      }
+
+      function toggleGallery() {
+        const panel = document.getElementById('galleryPanel');
+        const btn = document.querySelector('.gallery-toggle');
+        panel.classList.toggle('collapsed');
+        btn.innerHTML = panel.classList.contains('collapsed') ? '📸' : '◀';
+      }
+
+      function takeSnapshot() {
+        const timestamp = new Date().toLocaleTimeString();
+        const galleryList = document.getElementById('galleryList');
+        
+        // Fetch snapshot with credentials to handle Basic Auth
+        fetch('/snapshot.jpg?t=' + Date.now(), {
+          credentials: 'include'
+        })
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch snapshot');
+          return res.blob();
+        })
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          
+          // Create gallery item container
+          const item = document.createElement('div');
+          item.className = 'gallery-item';
+          
+          // Create image element
+          const img = document.createElement('img');
+          img.src = url;
+          img.title = 'Captured at ' + timestamp;
+          
+          // Create delete button
+          const delBtn = document.createElement('button');
+          delBtn.className = 'delete-btn';
+          delBtn.innerHTML = '×';
+          delBtn.onclick = (e) => {
+            e.stopPropagation();
+            URL.revokeObjectURL(url); // Free memory
+            item.remove();
+          };
+
+          // Create save button (for mobile/easy download)
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'btn';
+          saveBtn.style.width = '100%';
+          saveBtn.style.fontSize = '10px';
+          saveBtn.style.padding = '4px';
+          saveBtn.textContent = '💾 Save to device';
+          saveBtn.onclick = () => {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'snapshot_' + new Date().toISOString().replace(/[:.]/g, '-') + '.jpg';
+            link.click();
+          };
+          
+          item.appendChild(img);
+          item.appendChild(delBtn);
+          item.appendChild(saveBtn);
+          
+          // Prepend to list
+          if (galleryList.firstChild) {
+            galleryList.insertBefore(item, galleryList.firstChild);
+          } else {
+            galleryList.appendChild(item);
+          }
+
+          // Ensure panel is visible when taking snapshot
+          document.getElementById('galleryPanel').classList.remove('collapsed');
+          document.getElementById('galleryPanel').scrollTop = 0;
+        })
+        .catch(err => {
+          console.error(err);
+          alert('Snapshot failed: ' + err.message);
+        });
+      }
+
+      function updateDashboard() {
+        fetch('/status')
+          .then(res => res.json())
+          .then(data => {
+            document.getElementById('dashBattery').textContent = data.battery + '%' + (data.isCharging ? ' ⚡' : '');
+            document.getElementById('dashTemp').textContent = data.temp.toFixed(1) + '°C';
+            document.getElementById('dashUptime').textContent = formatTime(data.uptime);
+            
+            // Color code temperature
+            const tempVal = document.getElementById('dashTemp');
+            if (data.temp > 45) tempVal.style.color = '#ff3b30';
+            else if (data.temp > 38) tempVal.style.color = '#ff9500';
+            else tempVal.style.color = '#007AFF';
+
+            // Dynamic Focus Slider Range
+            const focusDist = document.getElementById('focusDist');
+            const focusDash = document.getElementById('dashFocus');
+            const focusUnsupported = document.getElementById('focusUnsupported');
+            const focusControls = document.getElementById('focusControls');
+            
+            if (data.minFocusDistance > 0) {
+              const currentVal = focusDist ? focusDist.value : '--';
+              focusDash.textContent = 'Focus: ' + currentVal + '/' + data.minFocusDistance.toFixed(1);
+              if (focusUnsupported) focusUnsupported.style.display = 'none';
+              if (focusControls) focusControls.style.display = 'block';
+              if (focusDist) {
+                const oldMax = parseFloat(focusDist.max);
+                if (Math.abs(oldMax - data.minFocusDistance) > 0.001) {
+                  console.log("Updating focusDist max to: " + data.minFocusDistance);
+                  focusDist.max = data.minFocusDistance;
+                  // Force a UI refresh by re-setting the value
+                  const curVal = focusDist.value;
+                  focusDist.value = curVal;
+                }
+              }
+            } else {
+              focusDash.textContent = 'Focus: Fixed';
+              if (focusUnsupported) focusUnsupported.style.display = 'block';
+              if (focusControls) focusControls.style.display = 'none';
+            }
+
+            // Dynamic Exposure Slider Ranges
+            const isoSlider = document.getElementById('isoSlider');
+            if (isoSlider && data.isoMax > 0) {
+              if (parseInt(isoSlider.max) !== data.isoMax) {
+                isoSlider.min = data.isoMin;
+                isoSlider.max = data.isoMax;
+              }
+            }
+            const shutterSlider = document.getElementById('shutterSlider');
+            if (shutterSlider && data.shutterMax > 0) {
+              if (parseInt(shutterSlider.max) !== data.shutterMax) {
+                shutterSlider.min = data.shutterMin;
+                shutterSlider.max = data.shutterMax;
+              }
+            }
+          })
+          .catch(() => {});
+      }
+
+      function formatTime(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        return (h > 0 ? h + ':' : '') + 
+               (m < 10 ? '0' + m : m) + ':' + 
+               (s < 10 ? '0' + s : s);
+      }
+
+      // Initial dashboard update and start interval
+      updateDashboard();
+      setInterval(updateDashboard, 5000);
+
+      // Motion Detection Settings
+      let motionEnabled = false;
+      let motionSensitivity = 32;
+      let motionThreshold = 15;
+      let motionVolume = 0.5;
+      let motionAlertType = 'sine';
+      let prevFrameData = null;
+      let lastAlertTime = 0;
+      const motionDebugCanvas = document.createElement('canvas'); // Hidden processing canvas
+      const motionDebugCtx = motionDebugCanvas.getContext('2d', { willReadFrequently: true });
+
+      function toggleMotion() {
+        motionEnabled = !motionEnabled;
+        const btn = document.getElementById('motionToggle');
+        const controls = document.getElementById('motionControls');
+        const state = document.getElementById('motionState');
+        
+        if (motionEnabled) {
+          btn.textContent = 'Disable Motion Detection';
+          btn.classList.add('active');
+          controls.style.display = 'block';
+          state.textContent = 'ON';
+          state.style.color = '#007AFF';
+        } else {
+          btn.textContent = 'Enable Motion Detection';
+          btn.classList.remove('active');
+          controls.style.display = 'none';
+          state.textContent = 'OFF';
+          state.style.color = '#888';
+          prevFrameData = null;
+        }
+      }
+
+      function toggleSoundSettings() {
+        const panel = document.getElementById('soundSettings');
+        panel.style.display = (panel.style.display === 'none') ? 'block' : 'none';
+      }
+
+      function updateMotionSettings() {
+        motionSensitivity = parseInt(document.getElementById('motionSensitivity').value);
+        motionThreshold = parseInt(document.getElementById('motionThreshold').value);
+        motionVolume = parseInt(document.getElementById('alertVolume').value) / 100;
+        motionAlertType = document.getElementById('alertType').value;
+
+        document.getElementById('sensVal').textContent = motionSensitivity + 'px';
+        document.getElementById('threshVal').textContent = motionThreshold + '%';
+        document.getElementById('volVal').textContent = Math.floor(motionVolume * 100) + '%';
+      }
+
+      function playAlert(force = false) {
+        if (!force) {
+          const now = Date.now();
+          if (now - lastAlertTime < 2000) return; // Limit to one alert every 2 seconds
+          lastAlertTime = now;
+        }
+        
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        let freq = 880;
+        let type = motionAlertType;
+        let duration = 0.5;
+
+        if (type === 'beep-low') {
+          type = 'sine';
+          freq = 440;
+          duration = 0.3;
+        } else if (type === 'beep-high') {
+          type = 'sine';
+          freq = 1760;
+          duration = 0.2;
+        }
+
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(motionVolume * 0.2, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + duration);
+      }
+
+      function detectMotion(bmp) {
+        if (!motionEnabled || !bmp) return;
+        
+        // Dynamic Sensitivity: Cap at 1/4 of original resolution width
+        const maxSens = Math.floor(bmp.width / 4);
+        const w = Math.min(motionSensitivity, maxSens);
+        const h = Math.floor(w * (bmp.height / bmp.width));
+        
+        if (motionDebugCanvas.width !== w || motionDebugCanvas.height !== h) {
+          motionDebugCanvas.width = w;
+          motionDebugCanvas.height = h;
+        }
+        
+        motionDebugCtx.drawImage(bmp, 0, 0, w, h);
+        const currentFrame = motionDebugCtx.getImageData(0, 0, w, h);
+        const data = currentFrame.data;
+        
+        if (prevFrameData && prevFrameData.length === data.length) {
+          let changedPixels = 0;
+          const totalPixels = w * h;
+          
+          const debugDisplay = document.getElementById('motionDebug');
+          const debugCtx = debugDisplay.getContext('2d');
+          if (debugDisplay.width !== w || debugDisplay.height !== h) {
+            debugDisplay.width = w;
+            debugDisplay.height = h;
+          }
+          const debugData = debugCtx.createImageData(w, h);
+          
+          for (let i = 0; i < data.length; i += 4) {
+            // Compare luminance/diff (R, G, B)
+            const diff = Math.abs(data[i] - prevFrameData[i]) + 
+                         Math.abs(data[i+1] - prevFrameData[i+1]) + 
+                         Math.abs(data[i+2] - prevFrameData[i+2]);
+            
+            if (diff > 80) { // Individual pixel change intensity threshold
+              changedPixels++;
+              debugData.data[i] = 255;   // Red for change
+              debugData.data[i+1] = 0;
+              debugData.data[i+2] = 0;
+              debugData.data[i+3] = 255;
+            } else {
+              debugData.data[i] = data[i];
+              debugData.data[i+1] = data[i+1];
+              debugData.data[i+2] = data[i+2];
+              debugData.data[i+3] = 100; // Faded background
+            }
+          }
+          debugCtx.putImageData(debugData, 0, 0);
+          
+          const changePercent = (changedPixels / totalPixels) * 100;
+          if (changePercent >= motionThreshold) {
+            playAlert();
+            debugDisplay.style.borderColor = '#ff0000';
+            debugDisplay.style.boxShadow = '0 0 10px #ff0000';
+          } else {
+            debugDisplay.style.borderColor = '#444';
+            debugDisplay.style.boxShadow = 'none';
+          }
+        }
+        prevFrameData = data;
+      }
+
+      const minimapContainer = document.getElementById('minimapContainer');
+      const minimapViewport = document.getElementById('minimapViewport');
+
+      function updateMinimapViewport() {
+        if (!minimapContainer || !minimapViewport) return;
+        
+        // Match minimap container aspect ratio to the actual stream
+        if (lastDrawn && lastDrawn.width > 0) {
+          const aspectRatio = lastDrawn.height / lastDrawn.width;
+          minimapContainer.style.height = (160 * aspectRatio) + 'px';
+        }
+
+        const zoom = parseFloat(document.getElementById('zoom')?.value || '1.0');
+        const widthPercent = 100 / zoom;
+        const heightPercent = 100 / zoom;
+        
+        minimapViewport.style.width = widthPercent + '%';
+        minimapViewport.style.height = heightPercent + '%';
+        
+        // Center the viewport based on zoomFocusX/Y (which is the center of the crop)
+        let left = (zoomFocusX * 100) - (widthPercent / 2);
+        let top = (zoomFocusY * 100) - (heightPercent / 2);
+        
+        // Clamp to edges for UI display
+        left = Math.max(0, Math.min(100 - widthPercent, left));
+        top = Math.max(0, Math.min(100 - heightPercent, top));
+        
+        minimapViewport.style.left = left + '%';
+        minimapViewport.style.top = top + '%';
+        
+        // Hide minimap if no zoom
+        minimapContainer.style.display = (zoom > 1.0) ? 'block' : 'none';
+      }
+
+      function handleMinimapAction(e) {
+        if (!isDraggingMinimap && e.type !== 'mousedown' && e.type !== 'touchstart') return;
+        
+        const rect = minimapContainer.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        let x = (clientX - rect.left) / rect.width;
+        let y = (clientY - rect.top) / rect.height;
+        
+        // Ensure values are within 0 to 1
+        x = Math.max(0, Math.min(1, x));
+        y = Math.max(0, Math.min(1, y));
+        
+        zoomFocusX = x;
+        zoomFocusY = y;
+        
+        updateMinimapViewport();
+
+        // Throttle fetches to avoid jitter and server overload
+        const now = Date.now();
+        if (now - lastMinimapFetch > 50 || e.type === 'mouseup' || e.type === 'touchend') {
+          lastMinimapFetch = now;
+          fetch('/?zoom_focus=' + zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
+        }
+      }
+
+      minimapContainer.addEventListener('mousedown', (e) => { isDraggingMinimap = true; handleMinimapAction(e); });
+      minimapContainer.addEventListener('touchstart', (e) => { isDraggingMinimap = true; handleMinimapAction(e); });
+      window.addEventListener('mousemove', handleMinimapAction);
+      window.addEventListener('touchmove', handleMinimapAction);
+      window.addEventListener('mouseup', (e) => { if(isDraggingMinimap) { isDraggingMinimap = false; handleMinimapAction(e); } });
+      window.addEventListener('touchend', (e) => { if(isDraggingMinimap) { isDraggingMinimap = false; handleMinimapAction(e); } });
+
+      // Initialize minimap
+      setTimeout(updateMinimapViewport, 100);
 
       function targetCanvasSize(frame) {
         if (viewMode === 'fit') {
@@ -261,11 +1044,31 @@
       }
 
       const flashBtn = document.getElementById('flashBtn');
+      const torchStrengthContainer = document.getElementById('torchStrengthContainer');
+      const torchSliderGroup = document.getElementById('torchSliderGroup');
+      const torchSupportNotice = document.getElementById('torchSupportNotice');
+      const maxTorchLevel = parseInt('{{MAX_TORCH_STRENGTH}}') || 1;
+
       function updateFlashButton() {
         if (!flashBtn) return;
-        flashBtn.textContent = (torchState === 'on')
-          ? '⚡ Flash Off'
-          : '💡 Flash On';
+        
+        const isOn = (torchState === 'on');
+        flashBtn.textContent = isOn ? '⚡ Flash Off' : '💡 Flash On';
+
+        if (isOn) {
+          torchStrengthContainer.style.display = 'block';
+          if (maxTorchLevel > 1) {
+            torchSliderGroup.style.display = 'block';
+            torchSupportNotice.innerText = 'Adjusting flash brightness (1 to ' + maxTorchLevel + ')';
+            torchSupportNotice.style.color = '#007AFF';
+          } else {
+            torchSliderGroup.style.display = 'none';
+            torchSupportNotice.innerText = 'Multi-level brightness not supported on this device/Android version.';
+            torchSupportNotice.style.color = '#888';
+          }
+        } else {
+          torchStrengthContainer.style.display = 'none';
+        }
       }
 
       if (flashBtn) {
@@ -283,7 +1086,6 @@
       muteBtn.addEventListener('click', () => {
         const willUnmute = audioEl.muted;
         if (willUnmute) {
-          // Preflight check to detect 403 without toggling UI state
           const controller = new AbortController();
           fetch('/audio', {
             method: 'GET',
@@ -303,9 +1105,7 @@
             audioEl.muted = false;
             audioEl.play().catch(() => {});
             updateMuteButton();
-          }).catch(() => {
-            // Network or other error: keep muted and do not toggle button
-          });
+          }).catch(() => {});
         } else {
           audioEl.muted = true;
           audioEl.pause();
@@ -325,125 +1125,185 @@
         videoDelayMs = Math.max(0, (parseFloat(avDelay.value) || 0) * 1000);
       }
 
-      function startMjpegStream() {
-        if (!streamCanvas)
-          return;
-        if (mjpegRunning && mjpegAbort) {
-          return;
+      streamCanvas.addEventListener('click', (e) => {
+        const zoom = parseFloat(document.getElementById('zoom')?.value || '1.0');
+        if (zoom <= 1.0) return; // Disable click-to-focus at 1x zoom to avoid confusion
+
+        const rect = streamCanvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+        
+        // When zoomed in, x/y on the canvas are relative to the current viewport.
+        // We need to calculate the absolute position in the full image.
+        zoomFocusX = (zoomFocusX - 0.5/zoom) + (x / zoom);
+        zoomFocusY = (zoomFocusY - 0.5/zoom) + (y / zoom);
+        
+        // Clamp to stay within full image bounds while keeping viewport inside
+        const halfW = 0.5 / zoom;
+        const halfH = 0.5 / zoom;
+        zoomFocusX = Math.max(halfW, Math.min(1.0 - halfW, zoomFocusX));
+        zoomFocusY = Math.max(halfH, Math.min(1.0 - halfH, zoomFocusY));
+
+        updateMinimapViewport();
+        fetch('/?zoom_focus=' + zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
+      });
+
+      function drawLoop() {
+        if (!drawing) return;
+        const now = performance.now();
+        const effDelay = (audioEl && !audioEl.muted) ? videoDelayMs : 0;
+        let candidate = null;
+        while (frameQueue.length && frameQueue[0].ts <= now - effDelay) {
+          candidate = frameQueue.shift();
         }
-        if (mjpegAbort)
-          mjpegAbort.abort();
+        if (!candidate && frameQueue.length) {
+          const idx = frameQueue.findIndex(f => f.ts > now - effDelay);
+          if (idx > 0) {
+            candidate = frameQueue.splice(0, idx).pop() || null;
+          }
+        }
+        if (candidate && candidate.bmp) {
+          const size = targetCanvasSize(candidate.bmp);
+          const w = size.w;
+          const h = size.h;
+          applyCanvasSize(size);
+          const iw = candidate.bmp.width;
+          const ih = candidate.bmp.height;
+          const scale = Math.min(w / iw, h / ih);
+          const dw = Math.max(1, Math.floor(iw * scale));
+          const dh = Math.max(1, Math.floor(ih * scale));
+          const dx = Math.floor((w - dw) / 2);
+          const dy = Math.floor((h - dh) / 2);
+          const ctx = streamCanvas.getContext('2d');
+          
+          // Night Enhancement: Frame Averaging
+          if (nightAvgFrames > 1) {
+            frameBuffer.push(candidate.bmp);
+            if (frameBuffer.length > nightAvgFrames) {
+              const old = frameBuffer.shift();
+              if (old) old.close(); // Not strictly needed for bitmaps from fetch but good practice
+            }
+            
+            ctx.clearRect(0, 0, w, h);
+            // Proper mathematical average: 1/i weight progression
+            for (let i = 0; i < frameBuffer.length; i++) {
+              ctx.globalAlpha = 1.0 / (i + 1);
+              ctx.drawImage(frameBuffer[i], dx, dy, dw, dh);
+            }
+            
+            // Compensation Gain: Optionally boost the average result to act as true "Long Exposure"
+            // Since averaging reduces noise, we can now safely boost the brightness
+            if (nightGain > 0) {
+              // nightGain is already handled below, but we can add an extra multiplier here if needed
+            }
+            ctx.globalAlpha = 1.0;
+          } else {
+            // Normal Draw
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(candidate.bmp, dx, dy, dw, dh);
+            // Clear buffer if disabled
+            if (frameBuffer.length > 0) {
+              frameBuffer.forEach(b => b.close && b.close());
+              frameBuffer = [];
+            }
+          }
+
+          // Night Enhancement: Digital Gain Boost (Software Shadow Boost)
+          if (nightGain > 0) {
+            const gainData = ctx.getImageData(dx, dy, dw, dh);
+            const d = gainData.data;
+            // When averaging is active, we can afford a higher gain multiplier because noise is lower
+            const baseFactor = 1.0 + (nightGain / 100.0);
+            const factor = (nightAvgFrames > 1) ? baseFactor * 1.5 : baseFactor;
+            
+            for (let i = 0; i < d.length; i += 4) {
+              d[i] = Math.min(255, d[i] * factor);     // R
+              d[i+1] = Math.min(255, d[i+1] * factor); // G
+              d[i+2] = Math.min(255, d[i+2] * factor); // B
+            }
+            ctx.putImageData(gainData, dx, dy);
+          }
+
+          // Memory Management: Close the previous frame's bitmap if it's not in the averaging buffer
+          const prevDrawn = lastDrawn;
+          lastDrawn = candidate.bmp;
+
+          if (prevDrawn && prevDrawn !== candidate.bmp) {
+            if (!frameBuffer.includes(prevDrawn)) {
+              prevDrawn.close();
+            }
+          }
+
+          // Process Motion Detection on the current frame
+          if (motionEnabled) {
+            detectMotion(candidate.bmp);
+          }
+        }
+        requestAnimationFrame(drawLoop);
+      }
+
+      function startMjpegStream() {
+        if (!streamCanvas || mjpegRunning) return;
         const controller = new AbortController();
         mjpegAbort = controller;
         mjpegRunning = true;
         frameQueue = [];
         lastDrawn = null;
-        const ctx = streamCanvas.getContext('2d');
+
         fetch(STREAM_SRC, {
           cache: 'no-store',
           credentials: 'include',
           signal: controller.signal
-        })
-          .then(res => {
-            const reader = res
-              .body
-              .getReader();
-            let buffer = new Uint8Array(0);
-            function concat(a, b) {
-              const c = new Uint8Array(a.length + b.length);
-              c.set(a, 0);
-              c.set(b, a.length);
-              return c;
+        }).then(res => {
+          const reader = res.body.getReader();
+          let buffer = new Uint8Array(0);
+          function concat(a, b) {
+            const c = new Uint8Array(a.length + b.length);
+            c.set(a, 0);
+            c.set(b, a.length);
+            return c;
+          }
+          function findMarker(buf, marker) {
+            for (let i = 0; i < buf.length - 1; i++) {
+              if (buf[i] === 0xFF && buf[i + 1] === marker) return i;
             }
-            function findMarker(buf, marker) {
-              for (let i = 0; i < buf.length - 1; i++) {
-                if (buf[i] === 0xFF && buf[i + 1] === marker)
-                  return i;
-                }
-              return -1;
+            return -1;
+          }
+          function process() {
+            while (true) {
+              const soi = findMarker(buffer, 0xD8);
+              if (soi < 0) break;
+              const rest = buffer.subarray(soi);
+              const eoiRel = findMarker(rest, 0xD9);
+              if (eoiRel < 0) break;
+              const eoi = soi + eoiRel + 2;
+              const frameBytes = buffer.subarray(soi, eoi);
+              buffer = buffer.subarray(eoi);
+              const blob = new Blob([frameBytes], {type: 'image/jpeg'});
+              createImageBitmap(blob).then(bitmap => {
+                frameQueue.push({ts: performance.now(), bmp: bitmap});
+                if (frameQueue.length > 180) frameQueue.shift();
+              }).catch(() => {});
             }
-            function process() {
-              while (true) {
-                const soi = findMarker(buffer, 0xD8);
-                if (soi < 0)
-                  break;
-                const rest = buffer.subarray(soi);
-                const eoiRel = findMarker(rest, 0xD9);
-                if (eoiRel < 0)
-                  break;
-                const eoi = soi + eoiRel + 2;
-                const frameBytes = buffer.subarray(soi, eoi);
-                buffer = buffer.subarray(eoi);
-                const blob = new Blob([frameBytes], {type: 'image/jpeg'});
-                createImageBitmap(blob)
-                  .then(bitmap => {
-                    frameQueue.push({ts: performance.now(), bmp: bitmap});
-                    if (frameQueue.length > 180)
-                      frameQueue.shift();
-                    }
-                  )
-                  .catch(() => {});
+          }
+          function pump() {
+            return reader.read().then(({done, value}) => {
+              if (done) return;
+              if (value && value.length) {
+                buffer = concat(buffer, value);
+                process();
               }
-            }
-            function pump() {
-              return reader
-                .read()
-                .then(({done, value}) => {
-                  if (done)
-                    return;
-                  if (value && value.length) {
-                    buffer = concat(buffer, value);
-                    process();
-                  }
-                  return pump();
-                });
-            }
-            pump().catch(() => { mjpegRunning = false; });
-            function drawLoop() {
-              if (!drawing)
-                return;
-              const now = performance.now();
-              const effDelay = (audioEl && !audioEl.muted)
-                ? videoDelayMs
-                : 0;
-              let candidate = null;
-              while (frameQueue.length && frameQueue[0].ts <= now - effDelay) {
-                candidate = frameQueue.shift();
-              }
-              if (!candidate && frameQueue.length) {
-                const idx = frameQueue.findIndex(f => f.ts > now - effDelay);
-                if (idx > 0) {
-                  candidate = frameQueue
-                    .splice(0, idx)
-                    .pop() || null;
-                }
-              }
-              if (candidate && candidate.bmp) {
-                const size = targetCanvasSize(candidate.bmp);
-                const w = size.w;
-                const h = size.h;
-                applyCanvasSize(size);
-                const iw = candidate.bmp.width;
-                const ih = candidate.bmp.height;
-                const scale = Math.min(w / iw, h / ih);
-                const dw = Math.max(1, Math.floor(iw * scale));
-                const dh = Math.max(1, Math.floor(ih * scale));
-                const dx = Math.floor((w - dw) / 2);
-                const dy = Math.floor((h - dh) / 2);
-                ctx.clearRect(0, 0, w, h);
-                ctx.drawImage(candidate.bmp, dx, dy, dw, dh);
-                lastDrawn = candidate.bmp;
-              }
-              requestAnimationFrame(drawLoop);
-            }
-            if (!drawing) {
-              drawing = true;
-              requestAnimationFrame(drawLoop);
-            }
-          })
-          .catch(() => { mjpegRunning = false; });
+              return pump();
+            });
+          }
+          pump().catch(() => { mjpegRunning = false; });
+          
+          if (!drawing) {
+            drawing = true;
+            requestAnimationFrame(drawLoop);
+          }
+        }).catch(() => { mjpegRunning = false; });
       }
-      startMjpegStream();
 
       function stopMjpegStream() {
         if (mjpegAbort) {
@@ -455,7 +1315,6 @@
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-          // Stop audio and image streams when backgrounded
           if (!audioEl.muted) {
             audioEl.muted = true;
             audioEl.pause();
@@ -466,7 +1325,6 @@
           }
           stopMjpegStream();
         } else {
-          // Restart only the image stream on foreground
           startMjpegStream();
         }
       });
@@ -474,12 +1332,16 @@
       function updateCameraToggleBtn() {
         const backBtn = document.getElementById('backBtn');
         const frontBtn = document.getElementById('frontBtn');
+        const lensSelectGroup = document.getElementById('lensSelectGroup');
+        
         if (currentCamera === 'front') {
           backBtn.className = 'btn';
           frontBtn.className = 'btn active';
+          if (lensSelectGroup) lensSelectGroup.style.display = 'none';
         } else {
           backBtn.className = 'btn active';
           frontBtn.className = 'btn';
+          if (lensSelectGroup) lensSelectGroup.style.display = 'block';
         }
       }
 
@@ -487,14 +1349,62 @@
         fetch("/?camera=" + camera);
         currentCamera = camera;
         updateCameraToggleBtn();
+        // Trigger dashboard update to refresh focus range
+        setTimeout(updateDashboard, 1000);
       }
 
-      updateCameraToggleBtn();
+      let lastFocusFetch = 0;
+      function updateFocusDist(val) {
+        document.getElementById('focusDistVal').textContent = val;
+        const now = Date.now();
+        if (now - lastFocusFetch > 100) {
+          lastFocusFetch = now;
+          fetch("/?focus_distance=" + val).catch(() => {});
+        }
+      }
+
+      function setFocusMode(mode) {
+        fetch("/?focus_mode=" + mode);
+        document.getElementById('focusModeVal').textContent = mode;
+        const afBtn = document.getElementById('afBtn');
+        const mfBtn = document.getElementById('mfBtn');
+        const manualFocusGroup = document.getElementById('manualFocusGroup');
+        
+        if (mode === 'auto') {
+          afBtn.classList.add('active');
+          mfBtn.classList.remove('active');
+          manualFocusGroup.style.display = 'none';
+        } else {
+          afBtn.classList.remove('active');
+          mfBtn.classList.add('active');
+          manualFocusGroup.style.display = 'block';
+          // Ensure slider is updated and interactive
+          updateDashboard();
+        }
+      }
+
+      function triggerAutoFocus() {
+        const btn = document.getElementById('afTriggerBtn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Focusing...';
+        btn.disabled = true;
+        
+        fetch("/?autofocus=1")
+          .then(() => {
+            setTimeout(() => {
+              btn.textContent = originalText;
+              btn.disabled = false;
+            }, 2000);
+          })
+          .catch(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+          });
+      }
 
       function setView(mode) {
         const f = document.getElementById('fitBtn');
         const o = document.getElementById('origBtn');
-
         if (mode === 'fit') {
           f.className = 'btn active';
           o.className = 'btn';
@@ -506,6 +1416,10 @@
         }
         applyCanvasSize(targetCanvasSize(lastDrawn));
       }
+
+      updateCameraToggleBtn();
+      updateNightSettings();
+      startMjpegStream();
     </script>
   </body>
 </html>

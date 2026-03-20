@@ -1,10 +1,38 @@
-# Android IP Camera
+# Android IP Camera (Enhanced Version)
 
 [![downloads](https://img.shields.io/github/downloads/DigitallyRefined/android-ip-camera/total.svg)](https://github.com/DigitallyRefined/android-ip-camera/releases)
 [![downloads](https://img.shields.io/github/downloads/DigitallyRefined/android-ip-camera/latest/total.svg)](https://github.com/DigitallyRefined/android-ip-camera/releases)
 
-An Android MJPEG IP Camera app
+An Android MJPEG IP Camera app with **Professional Control & Night Enhancement**.
 
+## New & Enhanced Features 🚀
+
+This version (Forked) includes significant upgrades over the original project:
+
+### 🌙 Advanced Night Enhancement
+- **Temporal Frame Averaging**: Multi-frame stacking to reduce noise and boost brightness in extreme low light (software-based "Long Exposure").
+- **Manual Exposure (Hardware)**: Direct control over **ISO** and **Shutter Speed** via Camera2 API to bypass system auto-exposure limits.
+- **Digital Gain Boost**: Software curves to amplify shadow details without overblowing highlights.
+- **Monochrome Mode**: Toggle grayscale to eliminate chroma noise in dark environments.
+
+### 🎯 Precision Camera Control
+- **Manual Focus**: Slide to lock focus at specific distances (0 = Infinity to macro).
+- **🎯 Force Auto Focus**: One-tap hardware AF trigger to reset focus when lost in low light.
+- **Lens Selection**: Support for **Ultra Wide**, **Main**, and **Telephoto** lenses (specifically optimized for multi-lens devices like Samsung S10).
+- **High-Resolution Snapshots**: Capture full-sensor resolution JPEGs via a dedicated Snapshot gallery.
+
+### 🎛️ Modern Web Interface
+- **Device Dashboard**: Real-time monitoring of phone **Battery**, **Temperature**, **Focus Status**, and **Uptime**.
+- **Software Zoom & Minimap**: Viewport-based digital zoom with a draggable minimap for precise positioning.
+- **Motion Detection**: Client-side analysis with visual debug overlays and customizable audio alerts (multiple tones and volume control).
+- **Night Vision Filter**: CSS-based visual simulation for improved readability.
+
+### ⚙️ Stability & Performance
+- **GPU Memory Management**: Efficient bitmap recycling to prevent browser crashes during 24/7 streaming.
+- **Backpressure Handling**: Intelligent frame-skipping to prevent server overload on slow networks.
+- **Independent Rotation**: Separate orientation settings for front and back cameras.
+
+## Install
 ![Desktop Browser](screenshot.webp)
 
 ## Install
@@ -19,15 +47,12 @@ alt="Get it on GitHub" align="center" height="80" /></a>
 alt="Get it on Obtainium" align="center" height="54" /></a>
 </div>
 
-## Features
+## Standard Features (Legacy)
 
-- 🌎 Built in server, just open the video stream in a web browser, video app or even set it as a Home Assistant MJPEG IP Camera (using `https://<ip_address>:4444/stream`)
-- 📴 Option to turn the display off while streaming
-- 🤳 Switch between the main or selfie camera
-- 🎛️ Remote web interface with controls for camera section, image rotation, audio/video sync, flash light toggle, resolution, zoom, exposure and contrast
-- 🖼️ Choose between different image quality settings and frame rates (to help reduce phone over heating)
-- 🛂 Username and password protection
-- 🔐 Automatic TLS certificate support to protect stream and login details via HTTPS
+- 🌎 **Built-in Server**: Just open the stream in any web browser.
+- 📴 **Screen Off**: Stream in the background with the display off.
+- 🛂 **Security**: Mandatory username and password protection.
+- 🔐 **HTTPS/TLS**: Automatic self-signed certificate generation for secure delivery.
 
 ## ⚠️ Warning
 

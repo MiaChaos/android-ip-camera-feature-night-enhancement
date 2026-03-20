@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -16,16 +17,25 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
+import android.os.BatteryManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import android.util.Size
 import android.widget.Toast
+import androidx.camera.camera2.interop.Camera2CameraControl
+import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -44,6 +54,7 @@ import java.io.IOException
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -56,8 +67,29 @@ class StreamingService : LifecycleService() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: androidx.camera.core.Camera? = null
     private var lastFrameTime = 0L
+    private var zoomFocusX = 0.5f
+    private var zoomFocusY = 0.5f
     private var lensFacing = CameraSelector.DEFAULT_BACK_CAMERA
     private var cameraResolutionHelper: CameraResolutionHelper? = null
+    private var backLenses: List<Pair<String, String>> = emptyList()
+    private var lastSnapshot: ByteArray? = null
+    private var imageCapture: ImageCapture? = null
+
+    private val onPrefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
+        when (key) {
+            "camera_resolution", "camera_zoom", "camera_exposure", "camera_facing" -> {
+                lifecycleScope.launch(Dispatchers.Main) {
+                    startCamera()
+                }
+            }
+            "camera_zoom_focus_x" -> {
+                zoomFocusX = sharedPreferences.getFloat(key, 0.5f)
+            }
+            "camera_zoom_focus_y" -> {
+                zoomFocusY = sharedPreferences.getFloat(key, 0.5f)
+            }
+        }
+    }
 
     // UI Callbacks
     var onClientConnected: (() -> Unit)? = null
@@ -133,6 +165,12 @@ class StreamingService : LifecycleService() {
 
         // Load saved camera facing
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        
+        // Initialize cached values and register listener
+        zoomFocusX = prefs.getFloat("camera_zoom_focus_x", 0.5f)
+        zoomFocusY = prefs.getFloat("camera_zoom_focus_y", 0.5f)
+        prefs.registerOnSharedPreferenceChangeListener(onPrefChangeListener)
+
         lensFacing = if (prefs.getString(PREF_LAST_CAMERA_FACING, CAMERA_FACING_BACK) == CAMERA_FACING_FRONT) {
             CameraSelector.DEFAULT_FRONT_CAMERA
         } else {
@@ -144,6 +182,115 @@ class StreamingService : LifecycleService() {
             registerReceiver(notificationChannelReceiver, filter)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startNotificationChannelCheckFallback()
+        }
+
+        // Pre-detect camera capabilities (like flash strength) so UI can show it early
+        val initialLensId = if (lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) prefs.getString("camera_lens_id", null) else null
+        detectCameraCapabilities(initialLensId)
+        detectBackLenses()
+    }
+
+    fun triggerAutoFocus() {
+        val cam = camera ?: return
+        lifecycleScope.launch(Dispatchers.Main) {
+            try {
+                // Point at center (0.5, 0.5)
+                val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
+                val point = factory.createPoint(0.5f, 0.5f)
+                
+                // Clear any manual exposure/focus overrides from interop
+                val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+                camera2Control.captureRequestOptions = CaptureRequestOptions.Builder().build()
+                
+                val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                    .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                
+                cam.cameraControl.startFocusAndMetering(action)
+                Log.i(TAG, "Force Auto Focus triggered")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to trigger auto focus: ${e.message}")
+            }
+        }
+    }
+
+    private fun detectBackLenses() {
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val lenses = mutableListOf<Pair<String, String>>()
+            cameraManager.cameraIdList.forEach { id ->
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                if (facing == CameraCharacteristics.LENS_FACING_BACK) {
+                    val focalLengths = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                    val label = when {
+                        focalLengths == null -> "Camera $id"
+                        focalLengths.any { it < 3.0f } -> "Ultra Wide ($id)"
+                        focalLengths.any { it > 6.0f } -> "Telephoto ($id)"
+                        else -> "Main Camera ($id)"
+                    }
+                    lenses.add(id to label)
+                } else if (facing == null) {
+                    // Some external or special lenses might have null facing, check them too
+                    lenses.add(id to "External/Special ($id)")
+                }
+            }
+            backLenses = lenses
+            Log.i(TAG, "Detected lenses: $backLenses")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to detect lenses", e)
+        }
+    }
+
+    private fun detectCameraCapabilities(specificId: String? = null) {
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = specificId ?: getCameraId(cameraManager)
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+            // Flash strength (API 33+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    val flashInfoStrengthMaxLevelField = CameraCharacteristics::class.java.getDeclaredField("FLASH_INFO_STRENGTH_MAXIMUM_LEVEL")
+                    @Suppress("UNCHECKED_CAST")
+                    val flashInfoStrengthMaxLevelKey = flashInfoStrengthMaxLevelField.get(null) as CameraCharacteristics.Key<Int>
+                    
+                    val maxLevel = characteristics.get(flashInfoStrengthMaxLevelKey) ?: 1
+                    prefs.edit().putInt("camera_torch_max_level", maxLevel).apply()
+                    Log.i(TAG, "Pre-detected max torch level: $maxLevel")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to pre-detect torch capabilities: ${e.message}")
+                }
+            }
+
+            // Focus distance
+            val minFocusDistance = characteristics.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f
+            var finalMinFocus = minFocusDistance
+            
+            // On some devices, back cameras might report 0 but actually support focus
+            if (finalMinFocus == 0f && lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) {
+                finalMinFocus = 10f // Default fallback for back camera
+            }
+            
+            prefs.edit().putFloat("camera_min_focus_distance", finalMinFocus).apply()
+            Log.i(TAG, "Pre-detected min focus distance for $cameraId: $finalMinFocus (Raw: $minFocusDistance)")
+
+            // ISO range
+            val isoRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE)
+            if (isoRange != null) {
+                prefs.edit().putInt("camera_iso_min", isoRange.lower).putInt("camera_iso_max", isoRange.upper).apply()
+                Log.i(TAG, "Pre-detected ISO range: ${isoRange.lower} - ${isoRange.upper}")
+            }
+
+            // Exposure time (Shutter) range
+            val shutterRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE)
+            if (shutterRange != null) {
+                prefs.edit().putLong("camera_shutter_min", shutterRange.lower).putLong("camera_shutter_max", shutterRange.upper).apply()
+                Log.i(TAG, "Pre-detected Shutter range: ${shutterRange.lower} - ${shutterRange.upper} ns")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to detect camera capabilities", e)
         }
     }
 
@@ -164,6 +311,8 @@ class StreamingService : LifecycleService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        PreferenceManager.getDefaultSharedPreferences(this)
+            .unregisterOnSharedPreferenceChangeListener(onPrefChangeListener)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 unregisterReceiver(notificationChannelReceiver)
@@ -362,6 +511,77 @@ class StreamingService : LifecycleService() {
         camera = null
     }
 
+    fun getBackLenses(): List<Pair<String, String>> = backLenses
+
+    fun getLatestSnapshot(): ByteArray? = lastSnapshot
+
+    fun takeHighResSnapshot(callback: (ByteArray?) -> Unit) {
+        val capture = imageCapture
+        if (capture == null) {
+            callback(lastSnapshot)
+            return
+        }
+
+        capture.takePicture(
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    try {
+                        val buffer = image.planes[0].buffer
+                        val bytes = ByteArray(buffer.remaining())
+                        buffer.get(bytes)
+                        // This is raw JPEG from the sensor
+                        lastSnapshot = bytes
+                        callback(bytes)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "High-res capture error: ${e.message}")
+                        callback(lastSnapshot)
+                    } finally {
+                        image.close()
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e(TAG, "High-res capture failed: ${exception.message}")
+                    callback(lastSnapshot)
+                }
+            }
+        )
+    }
+
+    fun getDeviceStatus(): Map<String, Any> {
+        val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        val batteryPct = (level / scale.toFloat() * 100).toInt()
+        
+        val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        status == BatteryManager.BATTERY_STATUS_FULL
+        
+        // Temperature is in tenths of a degree Celsius
+        val temp = (batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10.0
+        
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val minFocusDistance = prefs.getFloat("camera_min_focus_distance", 0f)
+        val isoMin = prefs.getInt("camera_iso_min", 100)
+        val isoMax = prefs.getInt("camera_iso_max", 3200)
+        val shutterMin = prefs.getLong("camera_shutter_min", 100000L)
+        val shutterMax = prefs.getLong("camera_shutter_max", 1000000000L)
+        
+        return mapOf(
+            "battery" to batteryPct,
+            "isCharging" to isCharging,
+            "temp" to temp,
+            "uptime" to (SystemClock.elapsedRealtime() / 1000), // seconds
+            "minFocusDistance" to minFocusDistance,
+            "isoMin" to isoMin,
+            "isoMax" to isoMax,
+            "shutterMin" to shutterMin,
+            "shutterMax" to shutterMax
+        )
+    }
+
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
@@ -369,11 +589,36 @@ class StreamingService : LifecycleService() {
             val cameraProvider = cameraProviderFuture.get()
             this.cameraProvider = cameraProvider
 
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val selectedLensId = prefs.getString("camera_lens_id", null)
+
+            // Determine lens facing and selector
+            val cameraSelector = if (lensFacing == CameraSelector.DEFAULT_FRONT_CAMERA) {
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            } else if (!selectedLensId.isNullOrEmpty()) {
+                CameraSelector.Builder()
+                    .addCameraFilter { cameras ->
+                        cameras.filter { camInfo ->
+                            androidx.camera.camera2.interop.Camera2CameraInfo.from(camInfo).cameraId == selectedLensId
+                        }
+                    }
+                    .build()
+            } else {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            }
+
+            // Pre-detect camera capabilities (like flash strength, focus distance) so UI can show it early
+            detectCameraCapabilities(if (lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) selectedLensId else null)
+
             // Initialize camera resolution helper if not already done
             if (cameraResolutionHelper == null) {
                 cameraResolutionHelper = CameraResolutionHelper(this)
                 val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val cameraId = getCameraId(cameraManager)
+                val cameraId = if (!selectedLensId.isNullOrEmpty() && lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) {
+                    selectedLensId
+                } else {
+                    getCameraId(cameraManager)
+                }
                 cameraResolutionHelper?.initializeResolutions(cameraId)
             }
 
@@ -382,7 +627,6 @@ class StreamingService : LifecycleService() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .apply {
-                    val prefs = PreferenceManager.getDefaultSharedPreferences(this@StreamingService)
                     val quality = prefs.getString("camera_resolution", "low") ?: "low"
                     val targetResolution = cameraResolutionHelper?.getResolutionForQuality(quality)
 
@@ -419,11 +663,25 @@ class StreamingService : LifecycleService() {
                     }
                 }
 
+            // High Resolution Image Capture
+            val captureBuilder = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setFlashMode(ImageCapture.FLASH_MODE_AUTO)
+            
+            // Try to set highest possible resolution for ImageCapture
+            cameraResolutionHelper?.highResolution?.let { highRes ->
+                // For ImageCapture, we actually want even higher than what we use for streaming if available
+                // But let's at least ensure it's not restricted by the same low/medium/high logic
+                // CameraX by default picks the largest resolution for ImageCapture.
+            }
+
+            imageCapture = captureBuilder.build()
+
             try {
                 cameraProvider.unbindAll()
 
                 // Build Use Cases
-                val useCases = mutableListOf<androidx.camera.core.UseCase>(imageAnalyzer!!)
+                val useCases = mutableListOf<androidx.camera.core.UseCase>(imageAnalyzer!!, imageCapture!!)
 
                 // Add Preview if surface provider is available
                 if (currentSurfaceProvider != null) {
@@ -435,7 +693,7 @@ class StreamingService : LifecycleService() {
                 // Bind to Service Lifecycle
                 camera = cameraProvider.bindToLifecycle(
                     this,
-                    lensFacing,
+                    cameraSelector,
                     *useCases.toTypedArray()
                 )
 
@@ -466,17 +724,70 @@ class StreamingService : LifecycleService() {
         }
     }
 
+    private fun setTorchEnabled(enabled: Boolean) {
+        try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            // Find a camera ID that actually has a flash unit
+            val flashCameraId = cameraManager.cameraIdList.find { id ->
+                cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: "0"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                cameraManager.setTorchMode(flashCameraId, enabled)
+                Log.d(TAG, "Global torch set to $enabled on camera $flashCameraId")
+            } else {
+                camera?.cameraControl?.enableTorch(enabled)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set torch mode", e)
+            // Fallback to CameraX control if global control fails
+            camera?.cameraControl?.enableTorch(enabled)
+        }
+    }
+
     private fun applyCameraSettings() {
         val cam = camera ?: return
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
-        // Torch
+        // Torch / Flash
         try {
             val torchPref = prefs.getString("camera_torch", "off") ?: "off"
-            if (cam.cameraInfo.hasFlashUnit()) {
-                cam.cameraControl.enableTorch(torchPref == "on")
+            val isTorchOn = torchPref == "on"
+            
+            setTorchEnabled(isTorchOn)
+            
+            // Also update ImageCapture flash mode
+            imageCapture?.flashMode = if (isTorchOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+
+            // Update max torch level and strength if supported
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                    val cameraId = if (lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) {
+                        prefs.getString("camera_lens_id", null) ?: getCameraId(cameraManager)
+                    } else {
+                        getCameraId(cameraManager)
+                    }
+                    val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+                    
+                    val flashInfoStrengthMaxLevelField = CameraCharacteristics::class.java.getDeclaredField("FLASH_INFO_STRENGTH_MAXIMUM_LEVEL")
+                    @Suppress("UNCHECKED_CAST")
+                    val flashInfoStrengthMaxLevelKey = flashInfoStrengthMaxLevelField.get(null) as CameraCharacteristics.Key<Int>
+                    
+                    val maxLevel = characteristics.get(flashInfoStrengthMaxLevelKey) ?: 1
+                    prefs.edit().putInt("camera_torch_max_level", maxLevel).apply()
+
+                    if (isTorchOn) {
+                        val strength = prefs.getString("camera_torch_strength", "1")?.toIntOrNull() ?: 1
+                        setTorchStrength(strength)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to update torch capabilities: ${e.message}")
+                }
             }
-        } catch (e: Exception) { Log.w(TAG, "Torch error: ${e.message}") }
+        } catch (e: Exception) { 
+            Log.e(TAG, "Torch error: ${e.message}", e) 
+        }
 
         // Zoom
         val requestedZoomFactor = prefs.getString("camera_zoom", "1.0")?.toFloatOrNull() ?: 1.0f
@@ -485,6 +796,80 @@ class StreamingService : LifecycleService() {
         // Exposure
         val exposureValue = prefs.getString("camera_exposure", "0")?.toIntOrNull() ?: 0
         cam.cameraControl.setExposureCompensationIndex(exposureValue)
+
+        // Focus
+        val focusMode = prefs.getString("camera_focus_mode", "auto") ?: "auto"
+        if (focusMode == "manual") {
+            val focusDistance = prefs.getFloat("camera_focus_distance", 0f)
+            setFocusManual(focusDistance)
+        }
+
+        // Manual Exposure (ISO/Shutter)
+        val exposureMode = prefs.getString("camera_exposure_mode", "auto") ?: "auto"
+        if (exposureMode == "manual") {
+            val iso = prefs.getInt("camera_iso", 400)
+            val shutter = prefs.getLong("camera_shutter", 20000000L) // 1/50s default
+            setExposureManual(iso, shutter)
+        }
+    }
+
+    private fun setExposureManual(iso: Int, shutterNs: Long) {
+        val cam = camera ?: return
+        try {
+            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+            val builder = CaptureRequestOptions.Builder()
+                .setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                .setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
+                .setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterNs)
+            
+            camera2Control.captureRequestOptions = builder.build()
+            Log.d(TAG, "Manual exposure set: ISO=$iso, Shutter=${shutterNs}ns")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set manual exposure: ${e.message}")
+        }
+    }
+
+    private fun setFocusManual(distance: Float) {
+        val cam = camera ?: return
+        try {
+            val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+            val builder = CaptureRequestOptions.Builder()
+                .setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+                .setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
+            
+            camera2Control.captureRequestOptions = builder.build()
+            Log.d(TAG, "Manual focus set to distance: $distance")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set manual focus: ${e.message}")
+        }
+    }
+
+    private fun setTorchStrength(level: Int) {
+        val cam = camera ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                val camera2Control = Camera2CameraControl.from(cam.cameraControl)
+                
+                // Use reflection to access FLASH_STRENGTH_LEVEL to avoid unresolved reference at compile time
+                val flashStrengthLevelField = CaptureRequest::class.java.getDeclaredField("FLASH_STRENGTH_LEVEL")
+                @Suppress("UNCHECKED_CAST")
+                val flashStrengthLevelKey = flashStrengthLevelField.get(null) as CaptureRequest.Key<Int>
+                
+                val builder = CaptureRequestOptions.Builder()
+                    .setCaptureRequestOption(flashStrengthLevelKey, level)
+                
+                // If torch is ON, we might need to explicitly ensure FLASH_MODE is TORCH in the options
+                val torchPref = PreferenceManager.getDefaultSharedPreferences(this).getString("camera_torch", "off")
+                if (torchPref == "on") {
+                    builder.setCaptureRequestOption(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
+                }
+                
+                camera2Control.captureRequestOptions = builder.build()
+                Log.d(TAG, "Torch strength set to $level (Torch: $torchPref)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to set torch strength: ${e.message}")
+            }
+        }
     }
 
     private fun handleRemoteControl(key: String, value: String) {
@@ -493,21 +878,24 @@ class StreamingService : LifecycleService() {
 
         when (key) {
             "torch" -> {
-                val current = prefs.getString("camera_torch", "off") ?: "off"
                 val next = when (value.lowercase()) {
                     "on" -> "on"
                     "off" -> "off"
-                    "toggle" -> if (current == "on") "off" else "on"
+                    "toggle" -> {
+                        val current = prefs.getString("camera_torch", "off") ?: "off"
+                        if (current == "on") "off" else "on"
+                    }
                     else -> return
                 }
                 prefs.edit().putString("camera_torch", next).apply()
                 launchMain {
-                    try {
-                        if (cam?.cameraInfo?.hasFlashUnit() == true) {
-                            cam.cameraControl.enableTorch(next == "on")
-                        }
-                    } catch (e: Exception) {}
+                    setTorchEnabled(next == "on")
                 }
+            }
+            "torch_strength" -> {
+                val strength = value.toIntOrNull() ?: return
+                prefs.edit().putString("camera_torch_strength", strength.toString()).apply()
+                launchMain { setTorchStrength(strength) }
             }
             "zoom" -> {
                 val zoomFactor = value.toFloatOrNull() ?: return
@@ -531,7 +919,15 @@ class StreamingService : LifecycleService() {
                 }
             }
             "camera" -> {
-                 switchCamera()
+                lensFacing = if (value == "front") CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+                prefs.edit().putString(PREF_LAST_CAMERA_FACING, value).apply()
+                cameraResolutionHelper = null
+                launchMain { startCamera() }
+            }
+            "lens_id" -> {
+                prefs.edit().putString("camera_lens_id", value).apply()
+                cameraResolutionHelper = null
+                launchMain { startCamera() }
             }
             // Other settings like scale/delay/rotate are handled in processImage
             "scale" -> {
@@ -543,118 +939,246 @@ class StreamingService : LifecycleService() {
                 if (delay in 10L..1000L) prefs.edit().putString("stream_delay", value).apply()
             }
             "rotate" -> {
-                val currentRotation = prefs.getInt("camera_manual_rotate", 0)
+                val isFront = lensFacing == CameraSelector.DEFAULT_FRONT_CAMERA
+                val prefKey = if (isFront) "camera_manual_rotate_front" else "camera_manual_rotate_back"
+                val currentRotation = prefs.getInt(prefKey, 0)
                 val nextRotation = (currentRotation + 90) % 360
-                prefs.edit().putInt("camera_manual_rotate", nextRotation).apply()
+                prefs.edit().putInt(prefKey, nextRotation).apply()
+            }
+            "zoom_focus" -> {
+                val parts = value.split(",")
+                if (parts.size == 2) {
+                    val x = parts[0].toFloatOrNull() ?: 0.5f
+                    val y = parts[1].toFloatOrNull() ?: 0.5f
+                    prefs.edit()
+                        .putFloat("camera_zoom_focus_x", x)
+                        .putFloat("camera_zoom_focus_y", y)
+                        .apply()
+                }
+            }
+            "focus_mode" -> {
+                if (value in listOf("auto", "manual")) {
+                    prefs.edit().putString("camera_focus_mode", value).apply()
+                    launchMain {
+                        if (value == "auto") {
+                            // Reset to auto focus
+                            val camera2Control = camera?.let { Camera2CameraControl.from(it.cameraControl) }
+                            camera2Control?.captureRequestOptions = CaptureRequestOptions.Builder().build()
+                        } else {
+                            val dist = prefs.getFloat("camera_focus_distance", 0f)
+                            setFocusManual(dist)
+                        }
+                    }
+                }
+            }
+            "focus_distance" -> {
+                val distance = value.toFloatOrNull() ?: return
+                prefs.edit().putFloat("camera_focus_distance", distance).apply()
+                launchMain { setFocusManual(distance) }
+            }
+            "exposure_mode" -> {
+                if (value in listOf("auto", "manual")) {
+                    prefs.edit().putString("camera_exposure_mode", value).apply()
+                    launchMain {
+                        if (value == "auto") {
+                            // Reset to auto exposure
+                            val camera2Control = camera?.let { Camera2CameraControl.from(it.cameraControl) }
+                            camera2Control?.captureRequestOptions = CaptureRequestOptions.Builder().build()
+                        } else {
+                            val iso = prefs.getInt("camera_iso", 400)
+                            val shutter = prefs.getLong("camera_shutter", 20000000L)
+                            setExposureManual(iso, shutter)
+                        }
+                    }
+                }
+            }
+            "iso" -> {
+                val iso = value.toIntOrNull() ?: return
+                prefs.edit().putInt("camera_iso", iso).apply()
+                launchMain {
+                    if (prefs.getString("camera_exposure_mode", "auto") == "manual") {
+                        val shutter = prefs.getLong("camera_shutter", 20000000L)
+                        setExposureManual(iso, shutter)
+                    }
+                }
+            }
+            "shutter" -> {
+                val shutter = value.toLongOrNull() ?: return
+                prefs.edit().putLong("camera_shutter", shutter).apply()
+                launchMain {
+                    if (prefs.getString("camera_exposure_mode", "auto") == "manual") {
+                        val iso = prefs.getInt("camera_iso", 400)
+                        setExposureManual(iso, shutter)
+                    }
+                }
+            }
+            "autofocus" -> {
+                launchMain { triggerAutoFocus() }
             }
         }
     }
 
+    private val clientBusyMap = ConcurrentHashMap<StreamingServerHelper.Client, Boolean>()
+
     private fun processImage(image: ImageProxy) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val delay = prefs.getString("stream_delay", "33")?.toLongOrNull() ?: 33L
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastFrameTime < delay) {
-            image.close()
-            return
-        }
-        lastFrameTime = currentTime
-
-        val autoRotation = image.imageInfo.rotationDegrees
-        val manualRotation = prefs.getInt("camera_manual_rotate", 0)
-        val totalRotation = (autoRotation + manualRotation) % 360
-        val scaleFactor = prefs.getString("stream_scale", "1.0")?.toFloatOrNull() ?: 1.0f
-        val contrastValue = prefs.getString("camera_contrast", "0")?.toIntOrNull() ?: 0
-
-        // Convert YUV_420_888 to NV21
-        val nv21 = convertYUV420toNV21(image)
-
-        // Convert NV21 to JPEG
-        var jpegBytes = convertNV21toJPEG(nv21, image.width, image.height)
-
-        // Apply transformations if needed (Rotation, Scaling, Contrast)
-        if (totalRotation != 0 || scaleFactor != 1.0f || contrastValue != 0) {
-            try {
-                var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
-                if (bitmap != null) {
-                    val matrix = Matrix()
-
-                    // Apply Rotation
-                    if (totalRotation != 0) {
-                        matrix.postRotate(totalRotation.toFloat())
-                    }
-
-                    // Apply Scaling
-                    if (scaleFactor != 1.0f) {
-                        matrix.postScale(scaleFactor, scaleFactor)
-                    }
-
-                    // Create new bitmap with rotation and scaling applied
-                    val transformedBitmap = Bitmap.createBitmap(
-                        bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
-                    )
-
-                    if (transformedBitmap != bitmap) {
-                        bitmap.recycle()
-                        bitmap = transformedBitmap
-                    }
-
-                    // Apply Contrast if needed
-                    if (contrastValue != 0) {
-                        val contrastFactor = 1.0f + (contrastValue / 100.0f)
-
-                        val contrastColorMatrix = android.graphics.ColorMatrix().apply {
-                            set(floatArrayOf(
-                            contrastFactor, 0f, 0f, 0f, 0f,  // Red
-                            0f, contrastFactor, 0f, 0f, 0f,  // Green
-                            0f, 0f, contrastFactor, 0f, 0f,  // Blue
-                            0f, 0f, 0f, 1f, 0f               // Alpha
-                            ))
-                        }
-
-                        val paint = android.graphics.Paint().apply {
-                            colorFilter = android.graphics.ColorMatrixColorFilter(contrastColorMatrix)
-                        }
-
-                        val contrastedBitmap = Bitmap.createBitmap(
-                            bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888
-                        )
-                        val canvas = android.graphics.Canvas(contrastedBitmap)
-                        canvas.drawBitmap(bitmap, 0f, 0f, paint)
-
-                        bitmap.recycle()
-                        bitmap = contrastedBitmap
-                    }
-
-                    // Convert back to JPEG bytes
-                    val outputStream = java.io.ByteArrayOutputStream()
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-                    jpegBytes = outputStream.toByteArray()
-                    bitmap.recycle()
-                    outputStream.close()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error transforming image: ${e.message}")
-                // Continue with original image if transforming image fails
+        try {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val delay = prefs.getString("stream_delay", "33")?.toLongOrNull() ?: 33L
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastFrameTime < delay) {
+                return
             }
-        }
+            lastFrameTime = currentTime
 
-        streamingServerHelper?.getClients()?.let { clients ->
-            val toRemove = mutableListOf<StreamingServerHelper.Client>()
-            clients.forEach { client ->
+            val autoRotation = image.imageInfo.rotationDegrees
+            val isFront = lensFacing == CameraSelector.DEFAULT_FRONT_CAMERA
+            val prefKey = if (isFront) "camera_manual_rotate_front" else "camera_manual_rotate_back"
+            val manualRotation = prefs.getInt(prefKey, 0)
+            val totalRotation = (autoRotation + manualRotation) % 360
+            val scaleFactor = prefs.getString("stream_scale", "1.0")?.toFloatOrNull() ?: 1.0f
+            val zoomFactor = prefs.getString("camera_zoom", "1.0")?.toFloatOrNull() ?: 1.0f
+            // Use cached values for performance (reduces frame jitter)
+            val zoomFocusX = this.zoomFocusX
+            val zoomFocusY = this.zoomFocusY
+            val contrastValue = prefs.getString("camera_contrast", "0")?.toIntOrNull() ?: 0
+
+            // Convert YUV_420_888 to NV21
+            val nv21 = convertYUV420toNV21(image)
+            val crop = image.cropRect
+            
+            // Ensure dimensions are even to avoid issues with some encoders/decoders
+            val width = crop.width() and 1.inv()
+            val height = crop.height() and 1.inv()
+
+            // Convert NV21 to JPEG - USE CROP DIMENSIONS
+            var jpegBytes = convertNV21toJPEG(nv21, width, height)
+            
+            // Store as latest snapshot
+            lastSnapshot = jpegBytes
+
+            // Apply transformations if needed (Rotation, Scaling, Zoom, Contrast)
+            if (totalRotation != 0 || scaleFactor != 1.0f || zoomFactor != 1.0f || contrastValue != 0) {
                 try {
-                    client.writer.print("--frame\r\n")
-                    client.writer.print("Content-Type: image/jpeg\r\n")
-                    client.writer.print("Content-Length: ${jpegBytes.size}\r\n\r\n")
-                    client.writer.flush()
-                    client.outputStream.write(jpegBytes)
-                    client.outputStream.flush()
-                } catch (e: IOException) {
-                    try { client.socket.close() } catch (_: Exception) {}
-                    toRemove.add(client)
+                    var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+                    if (bitmap != null) {
+                        val srcWidth = bitmap.width
+                        val srcHeight = bitmap.height
+                        
+                        val finalMatrix = Matrix()
+                        if (totalRotation != 0) {
+                            finalMatrix.postRotate(totalRotation.toFloat())
+                        }
+                        
+                        var workingBitmap = bitmap
+                        if (totalRotation != 0) {
+                            workingBitmap = Bitmap.createBitmap(bitmap, 0, 0, srcWidth, srcHeight, finalMatrix, true)
+                            if (workingBitmap != bitmap) bitmap.recycle()
+                        }
+                        
+                        if (zoomFactor > 1.0f) {
+                            val w = workingBitmap.width
+                            val h = workingBitmap.height
+                            
+                            val cropW = w / zoomFactor
+                            val cropH = h / zoomFactor
+                            
+                            var startX = (zoomFocusX * w) - (cropW / 2f)
+                            var startY = (zoomFocusY * h) - (cropH / 2f)
+                            
+                            if (startX < 0) startX = 0f
+                            if (startY < 0) startY = 0f
+                            if (startX + cropW > w) startX = w - cropW
+                            if (startY + cropH > h) startY = h - cropH
+                            
+                            val zoomedBitmap = Bitmap.createBitmap(
+                                workingBitmap, startX.toInt(), startY.toInt(), cropW.toInt(), cropH.toInt()
+                            )
+                            if (zoomedBitmap != workingBitmap) workingBitmap.recycle()
+                            workingBitmap = zoomedBitmap
+                        }
+                        
+                        if (scaleFactor != 1.0f) {
+                            val scaledW = (workingBitmap.width * scaleFactor).toInt()
+                            val scaledH = (workingBitmap.height * scaleFactor).toInt()
+                            if (scaledW > 0 && scaledH > 0) {
+                                val scaledBitmap = Bitmap.createScaledBitmap(workingBitmap, scaledW, scaledH, true)
+                                if (scaledBitmap != workingBitmap) workingBitmap.recycle()
+                                workingBitmap = scaledBitmap
+                            }
+                        }
+                        
+                        bitmap = workingBitmap
+                        
+                        if (contrastValue != 0) {
+                            val contrastFactor = 1.0f + (contrastValue / 100.0f)
+                            val contrastColorMatrix = android.graphics.ColorMatrix().apply {
+                                set(floatArrayOf(
+                                contrastFactor, 0f, 0f, 0f, 0f,
+                                0f, contrastFactor, 0f, 0f, 0f,
+                                0f, 0f, contrastFactor, 0f, 0f,
+                                0f, 0f, 0f, 1f, 0f
+                                ))
+                            }
+                            val paint = android.graphics.Paint().apply {
+                                colorFilter = android.graphics.ColorMatrixColorFilter(contrastColorMatrix)
+                            }
+                            val contrastedBitmap = Bitmap.createBitmap(
+                                bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888
+                            )
+                            val canvas = android.graphics.Canvas(contrastedBitmap)
+                            canvas.drawBitmap(bitmap, 0f, 0f, paint)
+                            bitmap.recycle()
+                            bitmap = contrastedBitmap
+                        }
+
+                        val outputStream = java.io.ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+                        jpegBytes = outputStream.toByteArray()
+                        
+                        // Store the processed JPEG as latest snapshot
+                        lastSnapshot = jpegBytes
+                        Log.d(TAG, "Snapshot updated (processed): ${jpegBytes.size} bytes")
+                        
+                        bitmap.recycle()
+                        outputStream.close()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error transforming image: ${e.message}")
                 }
             }
-            toRemove.forEach { streamingServerHelper?.removeClient(it) }
+
+            streamingServerHelper?.getClients()?.let { clients ->
+                clients.forEach { client ->
+                    // Skip if client is still busy sending previous frame
+                    if (clientBusyMap[client] == true) return@forEach
+                    
+                    clientBusyMap[client] = true
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        try {
+                            synchronized(client.writer) {
+                                client.writer.print("--frame\r\n")
+                                client.writer.print("Content-Type: image/jpeg\r\n")
+                                client.writer.print("Content-Length: ${jpegBytes.size}\r\n\r\n")
+                                client.writer.flush()
+                                client.outputStream.write(jpegBytes)
+                                client.outputStream.flush()
+                            }
+                        } catch (e: IOException) {
+                            try { client.socket.close() } catch (_: Exception) {}
+                            streamingServerHelper?.removeClient(client)
+                            clientBusyMap.remove(client)
+                        } finally {
+                            clientBusyMap[client] = false
+                        }
+                    }
+                }
+                
+                // Cleanup busy map for disconnected clients
+                val currentClients = clients.toSet()
+                clientBusyMap.keys.removeIf { it !in currentClients }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Critical error in processImage: ${e.message}")
         }
     }
 
