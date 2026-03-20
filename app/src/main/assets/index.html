@@ -37,6 +37,15 @@
         align-items: center;
         gap: 5px;
       }
+      
+      .pressure-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #34c759;
+        display: inline-block;
+        transition: background 0.5s;
+      }
 
       .dashboard-val {
         color: #007AFF;
@@ -321,7 +330,7 @@
       <div class="dashboard">
         <div class="dashboard-item">🔋 <span id="dashBattery" class="dashboard-val">--%</span></div>
         <div class="dashboard-item">🌡️ <span id="dashTemp" class="dashboard-val">--°C</span></div>
-        <div class="dashboard-item">🔍 <span id="dashFocus" class="dashboard-val">--</span></div>
+        <div class="dashboard-item">📡 <span id="dashBitrate" class="dashboard-val">0 Mbps</span><span id="pressureDot" class="pressure-dot"></span></div>
         <div class="dashboard-item">⏱️ <span id="dashUptime" class="dashboard-val">00:00</span></div>
       </div>
 
@@ -393,9 +402,14 @@
 
           <label for="resolutionSelect">Resolution</label>
           <select id="resolutionSelect" style="margin-bottom: 20px" onchange='fetch("/?resolution="+this.value)'>
-            <option value='low' {{RES_LOW_SELECTED}}>Low (Fastest)</option>
-            <option value='medium' {{RES_MEDIUM_SELECTED}}>Medium</option>
-            <option value='high' {{RES_HIGH_SELECTED}}>High (Sharpest)</option>
+            <option value='240p' {{RES_240_SELECTED}}>240p (Saving Mode)</option>
+            <option value='480p' {{RES_480_SELECTED}}>480p (Standard)</option>
+            <option value='720p' {{RES_720_SELECTED}}>720p (HD)</option>
+            <option value='1080p' {{RES_1080_SELECTED}}>1080p (Full HD)</option>
+            <option value='4k' {{RES_4K_SELECTED}}>4K (Ultra HD)</option>
+            <option value='low' {{RES_LOW_SELECTED}}>Auto: Low</option>
+            <option value='medium' {{RES_MEDIUM_SELECTED}}>Auto: Medium</option>
+            <option value='high' {{RES_HIGH_SELECTED}}>Auto: High</option>
           </select>
 
           <label for="zoom">Zoom <span class='val-badge' id='zoomVal'>{{CUR_ZOOM}}x</span></label>
@@ -744,9 +758,17 @@
           .then(data => {
             document.getElementById('dashBattery').textContent = data.battery + '%' + (data.isCharging ? ' ⚡' : '');
             document.getElementById('dashTemp').textContent = data.temp.toFixed(1) + '°C';
+            document.getElementById('dashBitrate').textContent = data.bitrate || '0 Mbps';
             document.getElementById('dashUptime').textContent = formatTime(data.uptime);
             
-            // Color code temperature
+            // Network Pressure Indicator
+            const pressureDot = document.getElementById('pressureDot');
+            if (pressureDot && data.pressure !== undefined) {
+              const pressure = data.pressure;
+              if (pressure > 80) pressureDot.style.background = '#ff3b30'; // Red
+              else if (pressure > 50) pressureDot.style.background = '#ff9500'; // Orange
+              else pressureDot.style.background = '#34c759'; // Green
+            }
             const tempVal = document.getElementById('dashTemp');
             if (data.temp > 45) tempVal.style.color = '#ff3b30';
             else if (data.temp > 38) tempVal.style.color = '#ff9500';

@@ -335,6 +335,31 @@ class StreamingServerHelper(
         }
     }
 
+    private var bytesSentLastInterval = 0L
+    private var lastIntervalTime = System.currentTimeMillis()
+    private var currentBps = 0L
+
+    fun addBytesSent(bytes: Int) {
+        bytesSentLastInterval += bytes
+        val now = System.currentTimeMillis()
+        if (now - lastIntervalTime >= 2000) { // Calculate every 2 seconds
+            currentBps = (bytesSentLastInterval * 1000) / (now - lastIntervalTime)
+            bytesSentLastInterval = 0
+            lastIntervalTime = now
+        }
+    }
+
+    private fun getNetworkPressure(): Int {
+        val clientsCount = clients.size
+        if (clientsCount == 0) return 0
+        
+        // Simple pressure heuristic: 
+        val mbps = currentBps * 8 / 1024 / 1024
+        // 25 Mbps = 100% pressure for a single stream (more realistic for mobile MJPEG)
+        val pressure = (mbps * 4).toInt() 
+        return pressure.coerceIn(0, 100)
+    }
+
     private suspend fun handleClientConnection(socket: Socket, clientIp: String) {
         try {
             val outputStream = socket.getOutputStream()
@@ -511,6 +536,11 @@ class StreamingServerHelper(
                     .replace("{{RES_LOW_SELECTED}}", if (curResolution == "low") "selected" else "")
                     .replace("{{RES_MEDIUM_SELECTED}}", if (curResolution == "medium") "selected" else "")
                     .replace("{{RES_HIGH_SELECTED}}", if (curResolution == "high") "selected" else "")
+                    .replace("{{RES_4K_SELECTED}}", if (curResolution == "4k") "selected" else "")
+                    .replace("{{RES_1080_SELECTED}}", if (curResolution == "1080p") "selected" else "")
+                    .replace("{{RES_720_SELECTED}}", if (curResolution == "720p") "selected" else "")
+                    .replace("{{RES_480_SELECTED}}", if (curResolution == "480p") "selected" else "")
+                    .replace("{{RES_240_SELECTED}}", if (curResolution == "240p") "selected" else "")
                     .replace("{{CUR_ZOOM}}", curZoom)
                     .replace("{{CUR_SCALE}}", curScale)
                     .replace("{{CUR_EXPOSURE}}", curExposure)
@@ -596,7 +626,10 @@ class StreamingServerHelper(
                     val valueStr = if (v is String) "\"$v\"" else v.toString()
                     json.append("\"$k\":$valueStr,") 
                 }
-                if (json.length > 1) json.setLength(json.length - 1)
+                // Add network pressure
+                json.append("\"pressure\":${getNetworkPressure()},")
+                val bitrateMbps = currentBps * 8 / 1024 / 1024.0
+                json.append("\"bitrate\":\"${"%.1f".format(bitrateMbps)} Mbps\"")
                 json.append("}")
                 
                 writer.print("HTTP/1.1 200 OK\r\n")

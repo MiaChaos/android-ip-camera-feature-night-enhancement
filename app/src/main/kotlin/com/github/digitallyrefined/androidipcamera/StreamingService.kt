@@ -610,17 +610,17 @@ class StreamingService : LifecycleService() {
             // Pre-detect camera capabilities (like flash strength, focus distance) so UI can show it early
             detectCameraCapabilities(if (lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) selectedLensId else null)
 
-            // Initialize camera resolution helper if not already done
+            // Initialize camera resolution helper
             if (cameraResolutionHelper == null) {
                 cameraResolutionHelper = CameraResolutionHelper(this)
-                val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val cameraId = if (!selectedLensId.isNullOrEmpty() && lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) {
-                    selectedLensId
-                } else {
-                    getCameraId(cameraManager)
-                }
-                cameraResolutionHelper?.initializeResolutions(cameraId)
             }
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = if (!selectedLensId.isNullOrEmpty() && lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) {
+                selectedLensId
+            } else {
+                getCameraId(cameraManager)
+            }
+            cameraResolutionHelper?.initializeResolutions(cameraId)
 
             // Image Analysis (Streaming)
             imageAnalyzer = ImageAnalysis.Builder()
@@ -631,6 +631,7 @@ class StreamingService : LifecycleService() {
                     val targetResolution = cameraResolutionHelper?.getResolutionForQuality(quality)
 
                     if (targetResolution != null) {
+                        Log.i(TAG, "Requesting resolution: $quality -> ${targetResolution.width}x${targetResolution.height}")
                         setResolutionSelector(
                             ResolutionSelector.Builder()
                                 .setResolutionStrategy(ResolutionStrategy(targetResolution, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
@@ -639,11 +640,13 @@ class StreamingService : LifecycleService() {
                     } else {
                         // Fallback
                          val fallbackResolution = when (quality) {
-                            "high" -> Size(1280, 720)
-                            "medium" -> Size(960, 720)
-                            "low" -> Size(800, 600)
-                            else -> Size(800, 600)
+                            "1080p", "high" -> Size(1920, 1080)
+                            "720p", "medium" -> Size(1280, 720)
+                            "480p", "low" -> Size(640, 480)
+                            "240p" -> Size(320, 240)
+                            else -> Size(640, 480)
                         }
+                        Log.i(TAG, "Target resolution not found, using fallback: $quality -> ${fallbackResolution.width}x${fallbackResolution.height}")
                         setResolutionSelector(
                             ResolutionSelector.Builder()
                                 .setResolutionStrategy(ResolutionStrategy(fallbackResolution, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
@@ -913,7 +916,7 @@ class StreamingService : LifecycleService() {
                 Log.i(TAG, "Remote Control: Contrast set to $contrast (software-based)")
             }
             "resolution" -> {
-                if (value in listOf("low", "medium", "high")) {
+                if (value in listOf("low", "medium", "high", "4k", "1080p", "720p", "480p", "240p")) {
                     prefs.edit().putString("camera_resolution", value).apply()
                     launchMain { startCamera() } // Restart
                 }
@@ -1035,6 +1038,18 @@ class StreamingService : LifecycleService() {
             val prefKey = if (isFront) "camera_manual_rotate_front" else "camera_manual_rotate_back"
             val manualRotation = prefs.getInt(prefKey, 0)
             val totalRotation = (autoRotation + manualRotation) % 360
+            val quality = prefs.getString("camera_resolution", "low") ?: "low"
+            
+            // Hard target widths for software downscaling to ensure user actually gets lower quality/bandwidth
+            val targetWidth = when (quality) {
+                "4k" -> 3840
+                "1080p", "high" -> 1920
+                "720p", "medium" -> 1280
+                "480p", "low" -> 640
+                "240p" -> 320
+                else -> 640
+            }
+
             val scaleFactor = prefs.getString("stream_scale", "1.0")?.toFloatOrNull() ?: 1.0f
             val zoomFactor = prefs.getString("camera_zoom", "1.0")?.toFloatOrNull() ?: 1.0f
             // Use cached values for performance (reduces frame jitter)
@@ -1049,6 +1064,11 @@ class StreamingService : LifecycleService() {
             // Ensure dimensions are even to avoid issues with some encoders/decoders
             val width = crop.width() and 1.inv()
             val height = crop.height() and 1.inv()
+            
+            // Log resolution occasionally
+            if (SystemClock.elapsedRealtime() % 10000 < 100) {
+                Log.d(TAG, "Source frame resolution: ${width}x${height}")
+            }
 
             // Convert NV21 to JPEG - USE CROP DIMENSIONS
             var jpegBytes = convertNV21toJPEG(nv21, width, height)
@@ -1057,7 +1077,7 @@ class StreamingService : LifecycleService() {
             lastSnapshot = jpegBytes
 
             // Apply transformations if needed (Rotation, Scaling, Zoom, Contrast)
-            if (totalRotation != 0 || scaleFactor != 1.0f || zoomFactor != 1.0f || contrastValue != 0) {
+            if (totalRotation != 0 || scaleFactor != 1.0f || zoomFactor != 1.0f || contrastValue != 0 || width > targetWidth) {
                 try {
                     var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
                     if (bitmap != null) {
@@ -1097,9 +1117,13 @@ class StreamingService : LifecycleService() {
                             workingBitmap = zoomedBitmap
                         }
                         
-                        if (scaleFactor != 1.0f) {
-                            val scaledW = (workingBitmap.width * scaleFactor).toInt()
-                            val scaledH = (workingBitmap.height * scaleFactor).toInt()
+                        // Combined scaling: resolution target * user scale factor
+                        val autoScale = if (workingBitmap.width > targetWidth) targetWidth.toFloat() / workingBitmap.width else 1.0f
+                        val finalScale = autoScale * scaleFactor
+                        
+                        if (finalScale != 1.0f) {
+                            val scaledW = (workingBitmap.width * finalScale).toInt()
+                            val scaledH = (workingBitmap.height * finalScale).toInt()
                             if (scaledW > 0 && scaledH > 0) {
                                 val scaledBitmap = Bitmap.createScaledBitmap(workingBitmap, scaledW, scaledH, true)
                                 if (scaledBitmap != workingBitmap) workingBitmap.recycle()
@@ -1162,6 +1186,7 @@ class StreamingService : LifecycleService() {
                                 client.writer.flush()
                                 client.outputStream.write(jpegBytes)
                                 client.outputStream.flush()
+                                streamingServerHelper?.addBytesSent(jpegBytes.size)
                             }
                         } catch (e: IOException) {
                             try { client.socket.close() } catch (_: Exception) {}

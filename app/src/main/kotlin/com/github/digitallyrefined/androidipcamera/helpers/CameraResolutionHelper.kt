@@ -11,6 +11,11 @@ class CameraResolutionHelper(private val context: Context) {
     var highResolution: Size? = null
     var mediumResolution: Size? = null
     var lowResolution: Size? = null
+    var uhdResolution: Size? = null // 4K
+    var fhdResolution: Size? = null // 1080p
+    var hdResolution: Size? = null  // 720p
+    var sdResolution: Size? = null  // 480p
+    var lqResolution: Size? = null  // 360p
 
     fun initializeResolutions(cameraId: String) {
         try {
@@ -19,69 +24,50 @@ class CameraResolutionHelper(private val context: Context) {
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             if (map != null) {
                 val supportedSizes = map.getOutputSizes(ImageFormat.YUV_420_888)
-                Log.i(TAG, "Camera $cameraId supports ${supportedSizes.size} resolutions")
-                if (supportedSizes.isNotEmpty()) {
+                if (supportedSizes != null && supportedSizes.isNotEmpty()) {
                     val sortedSizes = supportedSizes.sortedByDescending { it.width * it.height }
-                    Log.i(TAG, "Available resolutions for camera $cameraId:")
-                    sortedSizes.forEachIndexed { index, size ->
-                        Log.i(TAG, "  ${index + 1}. ${size.width}x${size.height} (${size.width * size.height} pixels)")
-                    }
-                    when {
-                        sortedSizes.size >= 3 -> {
-                            // High: use a resolution around 1280x720 or smaller
-                            highResolution = sortedSizes.find { it.width <= 1280 && it.height <= 720 }
-                                ?: sortedSizes.find { it.width <= 960 && it.height <= 720 }
-                                ?: sortedSizes[sortedSizes.size / 3]
-                            // Medium: use a resolution around 960x720 or smaller, but smaller than high
-                            val highRes = highResolution
-                            mediumResolution = sortedSizes.find {
-                                it.width <= 960 && it.height <= 720 &&
-                                (highRes == null || (it.width * it.height) < (highRes.width * highRes.height))
-                            } ?: sortedSizes.find {
-                                it.width <= 800 && it.height <= 600 &&
-                                (highRes == null || (it.width * it.height) < (highRes.width * highRes.height))
-                            } ?: sortedSizes[sortedSizes.size * 2 / 3]
-                            // Low: use a resolution smaller than medium, more conservative
-                            val mediumRes = mediumResolution
-                            lowResolution = sortedSizes.find {
-                                it.width <= 640 && it.height <= 480 &&
-                                (mediumRes == null || (it.width * it.height) < (mediumRes.width * mediumRes.height))
-                            } ?: sortedSizes.find {
-                                it.width <= 800 && it.height <= 600 &&
-                                (mediumRes == null || (it.width * it.height) < (mediumRes.width * mediumRes.height))
-                            } ?: sortedSizes[sortedSizes.size - 2].takeIf { sortedSizes.size > 1 }
-                                ?: sortedSizes.last()
-                        }
-                        sortedSizes.size == 2 -> {
-                            // For 2 resolutions, use the larger for high, smaller for medium, and use a conservative low
-                            highResolution = sortedSizes[0]
-                            mediumResolution = sortedSizes[1]
-                            lowResolution = Size(640, 480)
-                        }
-                        else -> {
-                            // Only one resolution available
-                            highResolution = sortedSizes[0]
-                            mediumResolution = sortedSizes[0]
-                            lowResolution = sortedSizes[0]
-                        }
-                    }
-                    Log.i(TAG, "Selected resolutions for camera $cameraId:")
-                    Log.i(TAG, "  High: ${highResolution?.width}x${highResolution?.height}")
-                    Log.i(TAG, "  Medium: ${mediumResolution?.width}x${mediumResolution?.height}")
-                    Log.i(TAG, "  Low: ${lowResolution?.width}x${lowResolution?.height}")
-                } else {
-                    Log.w(TAG, "No supported resolutions found for camera $cameraId")
+                    
+                    // Specific resolutions for S10 and modern phones
+                    uhdResolution = sortedSizes.find { it.width == 3840 && it.height == 2160 }
+                                    ?: sortedSizes.find { it.width in 3500..4000 && it.height in 2000..2500 }
+
+                    fhdResolution = sortedSizes.find { it.width == 1920 && it.height == 1080 } 
+                                    ?: sortedSizes.find { it.width in 1800..2000 && it.height in 1000..1200 }
+                    
+                    hdResolution = sortedSizes.find { it.width == 1280 && it.height == 720 }
+                                   ?: sortedSizes.find { it.width in 1200..1400 && it.height in 700..800 }
+                    
+                    sdResolution = sortedSizes.find { it.width == 640 && it.height == 480 }
+                                   ?: sortedSizes.find { it.width in 600..800 && it.height in 400..600 }
+                    
+                    lqResolution = sortedSizes.find { it.width == 320 && it.height == 240 }
+                                   ?: sortedSizes.last()
+
+                    Log.i(TAG, "Initialized resolutions for $cameraId:")
+                    Log.i(TAG, "  UHD (4K): ${uhdResolution?.width}x${uhdResolution?.height}")
+                    Log.i(TAG, "  FHD (1080p): ${fhdResolution?.width}x${fhdResolution?.height}")
+                    Log.i(TAG, "  HD (720p): ${hdResolution?.width}x${hdResolution?.height}")
+                    Log.i(TAG, "  SD (480p): ${sdResolution?.width}x${sdResolution?.height}")
+                    Log.i(TAG, "  LQ (240p): ${lqResolution?.width}x${lqResolution?.height}")
+
+                    // Maintain legacy mapping for compatibility
+                    highResolution = uhdResolution ?: fhdResolution ?: hdResolution ?: sortedSizes.first()
+                    mediumResolution = fhdResolution ?: hdResolution ?: sdResolution ?: sortedSizes[sortedSizes.size / 2]
+                    lowResolution = sdResolution ?: lqResolution ?: sortedSizes.last()
                 }
-            } else {
-                Log.w(TAG, "No stream configuration map found for camera $cameraId")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error initializing resolutions for camera $cameraId: ${e.message}")
+            Log.e(TAG, "Error initializing resolutions: ${e.message}")
         }
     }
 
     fun getResolutionForQuality(quality: String): Size? {
         return when (quality) {
+            "4k" -> uhdResolution
+            "1080p" -> fhdResolution
+            "720p" -> hdResolution
+            "480p" -> sdResolution
+            "240p" -> lqResolution
             "high" -> highResolution
             "medium" -> mediumResolution
             "low" -> lowResolution
