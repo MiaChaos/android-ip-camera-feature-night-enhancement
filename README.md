@@ -1,63 +1,79 @@
-# Android IP Camera (Enhanced Version)
+# Android IP Camera (Professional Night Enhancement Edition)
 
 **English** | [中文](README_zh.md)
 
-An Android MJPEG IP Camera app with **Professional Control & Night Enhancement**.
+This is a heavily modified fork of the original Android IP Camera, specifically engineered to transform high-end legacy devices (like the **Samsung S10**) into professional-grade **Low-Light Observation Stations**.
 
-## New & Enhanced Features 🚀
+While the original project provides a solid foundation for streaming, this version focuses entirely on **extreme night vision capabilities**, **manual hardware precision**, and **intelligent biological monitoring (Gecko Mode)**.
 
-This version (Forked) includes significant upgrades over the original project:
+---
 
-### 🌙 Advanced Night Enhancement
+## 🌙 The "Night Stalker" Suite: Extreme Low-Light Features
 
-- **Temporal Frame Averaging**: Multi-frame stacking to reduce noise and boost brightness in extreme low light (software-based "Long Exposure").
-- **Manual Exposure (Hardware)**: Direct control over **ISO** and **Shutter Speed** via Camera2 API to bypass system auto-exposure limits.
-- **Digital Gain Boost**: Software curves to amplify shadow details without overblowing highlights.
-- **Monochrome Mode**: Toggle grayscale to eliminate chroma noise in dark environments.
+This version implements a multi-stage image enhancement pipeline that rivals dedicated digital night vision hardware:
 
-### 🎯 Precision Camera Control
-- **True Resolution Control**: Select specific output resolutions (**4K**, **1080p**, **720p**, **480p**, **240p**) with automatic software downscaling to save bandwidth.
-- **Manual Focus**: Slide to lock focus at specific distances (0 = Infinity to macro).
-- **🎯 Force Auto Focus**: One-tap hardware AF trigger to reset focus when lost in low light.
-- **Lens Selection**: Support for **Ultra Wide**, **Main**, and **Telephoto** lenses (specifically optimized for multi-lens devices like Samsung S10).
-- **High-Resolution Snapshots**: Capture full-sensor resolution JPEGs via a dedicated Snapshot gallery.
+### 🧬 Hardware-Side Pixel Binning (SNR Boost)
+- **What it does**: Performs 2x2 spatial averaging on **raw NV21 data** directly on the phone before JPEG compression.
+- **The Result**: Effectively doubles the signal-to-noise ratio (SNR). It "crushes" sensor noise at the source, delivering a remarkably clean image even at extreme ISO levels.
 
-### 🎛️ Modern Web Interface
+### ⏳ Temporal Frame Averaging (Software Long-Exposure)
+- **What it does**: Stacks 1-10 consecutive frames in the browser using a recursive weighted averaging algorithm.
+- **The Result**: Produces a "Long Exposure" effect for static scenes (like a pet terrarium), virtually eliminating temporal noise and revealing objects in near-total darkness.
 
-- **Device Dashboard**: Real-time monitoring of phone **Battery**, **Temperature**, **Focus Status**, and **Uptime**.
-- **Software Zoom & Minimap**: Viewport-based digital zoom with a draggable minimap for precise positioning.
-- **Motion Detection**: Client-side analysis with visual debug overlays and customizable audio alerts (multiple tones and volume control).
-- **Night Vision Filter**: CSS-based visual simulation for improved readability.
+### 🌓 Advanced Tone Mapping & Contrast
+- **CLAHE (Local Adaptive Contrast)**: Divides the image into an 8x8 grid to perform localized contrast stretching. This reveals details in the darkest shadows (e.g., inside a hide) without overblowing bright background lights.
+- **Gamma Correction**: Non-linear curve adjustment to lift mid-tones and shadows intelligently.
+- **Shadow Boost (Digital Gain)**: Non-linear software amplification for extreme cases.
 
-### ⚙️ Stability & Performance
+### 🌈 False Color (Heatmap Simulation)
+- Maps the 0-255 luminance range to a "Blue -> Green -> Red" color spectrum.
+- Ideal for identifying subtle heat signatures or movement patterns in environments where the human eye can no longer distinguish grayscale shades.
 
-- **GPU Memory Management**: Efficient bitmap recycling to prevent browser crashes during 24/7 streaming.
-- **Backpressure Handling**: Intelligent frame-skipping to prevent server overload on slow networks.
-- **Independent Rotation**: Separate orientation settings for front and back cameras.
+### 📐 Edge Sharpening
+- 3x3 Convolutional kernel to restore object outlines that become "fuzzy" during long-exposure or high-ISO captures.
 
-## Install
+---
 
-!\[Desktop Browser]\(screenshot.webp null)
+## 🎯 Professional Hardware Control
 
-## Standard Features (Legacy)
+Take full manual command of your device's optics:
 
-- 🌎 **Built-in Server**: Just open the stream in any web browser.
-- 📴 **Screen Off**: Stream in the background with the display off.
-- 🛂 **Security**: Mandatory username and password protection.
-- 🔐 **HTTPS/TLS**: Automatic self-signed certificate generation for secure delivery.
+- **Per-Lens Settings Persistence**: Different settings (ISO, Shutter, Focus, Binning) are automatically saved and restored for each lens (Ultra-Wide, Main, Telephoto).
+- **Manual Exposure (ISO & Shutter)**: Direct Camera2 API override. Lock your shutter at 1/10s or boost ISO to 3200+ to maximize photon collection.
+- **Manual Focus Distance**: Precise slider control (0 = Infinity to macro) to prevent "focus hunting" in the dark.
+- **🎯 Force Auto Focus**: Remote one-tap trigger to force a hardware focus/metering cycle.
+- **Flash Brightness (API 33+)**: Fine-grained control over the physical torch intensity.
 
-## ⚠️ Warning
+---
 
-If you are planning to run this 24/7, please make sure that your phone does not stay at 100% charge. Doing so may damage the battery and cause it to swell up, which could cause it to explode.
+## 🦎 Gecko Mode: Intelligent Motion Detection
 
-Some models include an option to only charge to 80%, make sure this is enabled where possible.
+Designed for monitoring slow-moving reptiles or low-activity subjects:
 
-Note: running at a higher image quality may cause some phones to over heat, which can also damage the battery.
+- **Slow Motion Mode (Gecko Mode)**: Compares the current frame against a reference frame from up to 5 seconds ago. This captures extremely slow displacements that traditional "next-frame" algorithms miss.
+- **Background Persistence**: Uses the **Screen Wake Lock API** and direct data-layer processing to ensure detection and audio alerts continue even when the browser tab is in the background or minimized.
+- **Pixel Intensity Tuning**: Adjustable threshold for what constitutes a "change," allowing you to filter out sensor noise while catching a moving gecko.
 
-## HTTPS/TLS certificates
+---
 
-To protect the stream and the password from being sent in plain-text over HTTP, a certificate can be used to start the stream over HTTPS.
+## 🛜 Modern Remote Dashboard
 
-The app will automatically generate a self-signed certificate on first launch, but if you have your own domain you can use [Let's Encrypt](https://letsencrypt.org) to generate a trusted certificate and skip the self-signed security warning message, by changing the TLS certificate in the settings.
+- **4K Ultra HD Support**: Hardware-detected 4K streaming with intelligent network backpressure management.
+- **Network Pressure Indicator**: Real-time Mbps monitoring with a status dot (Green/Yellow/Red) to help you choose the best resolution.
+- **Draggable Minimap**: Precise viewport positioning for digital zoom levels up to 8x.
+- **High-Res Snapshot Gallery**: Trigger full-sensor resolution captures remotely and manage them in a collapsible side-panel gallery.
 
-To generate a new self-signed certificate, clear the app settings and restart or clone this repo and run `./scripts/generate-certificate.sh` then use the certificate `personal_certificate.p12` file it generates.
+---
+
+## Getting Started
+
+1.  **Original Setup**: For basic installation, HTTPS certificate generation, and legacy features, please refer to the [Original Repository](https://github.com/DigitallyRefined/android-ip-camera).
+2.  **Usage**: Open the web dashboard, expand the **Night Enhancement** panel, and begin stacking the algorithms to suit your environment.
+
+---
+
+## ⚠️ Stability & Safety Note
+
+Running 24/7 at high resolutions with multiple enhancement algorithms active can generate significant heat. 
+- Always enable **Battery Protect (80% limit)** on your Android device.
+- Use **Pixel Binning** to reduce resolution/bandwidth while maintaining high signal quality.
