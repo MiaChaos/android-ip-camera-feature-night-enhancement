@@ -493,32 +493,48 @@ class StreamingServerHelper(
             // Handle Control UI
             if (uri == "/" || uri == "") {
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val service = context as? StreamingService
                 val curCamera = prefs.getString("last_camera_facing", "back") ?: "back"
-                val curResolution = prefs.getString("camera_resolution", "low") ?: "low"
-                val curZoom = prefs.getString("camera_zoom", "1.0") ?: "1.0"
-                val curScale = prefs.getString("stream_scale", "1.0") ?: "1.0"
-                val curExposure = prefs.getString("camera_exposure", "0") ?: "0"
-                val curContrast = prefs.getString("camera_contrast", "0") ?: "0"
-                val curDelay = prefs.getString("stream_delay", "33") ?: "33"
+                
+                // Helper to get lens-specific prefs
+                fun getPref(base: String, default: String): String = 
+                    service?.let { prefs.getString(it.getLensPrefKey(base), default) } ?: prefs.getString(base, default) ?: default
+                
+                fun getPrefFloat(base: String, default: Float): Float = 
+                    service?.let { prefs.getFloat(it.getLensPrefKey(base), default) } ?: prefs.getFloat(base, default)
+                
+                fun getPrefInt(base: String, default: Int): Int = 
+                    service?.let { prefs.getInt(it.getLensPrefKey(base), default) } ?: prefs.getInt(base, default)
+                
+                fun getPrefLong(base: String, default: Long): Long = 
+                    service?.let { prefs.getLong(it.getLensPrefKey(base), default) } ?: prefs.getLong(base, default)
+
+                val curResolution = getPref("camera_resolution", "low")
+                val curZoom = getPref("camera_zoom", "1.0")
+                val curScale = getPref("stream_scale", "1.0")
+                val curExposure = getPref("camera_exposure", "0")
+                val curContrast = getPref("camera_contrast", "0")
+                val curDelay = getPref("stream_delay", "33")
                 val curTorch = prefs.getString("camera_torch", "off") ?: "off"
-                val curTorchStrength = prefs.getString("camera_torch_strength", "1")?.toIntOrNull() ?: 1
+                val curTorchStrength = getPref("camera_torch_strength", "1").toIntOrNull() ?: 1
                 val maxTorchStrength = prefs.getInt("camera_torch_max_level", 1)
-                val curZoomFocusX = prefs.getFloat("camera_zoom_focus_x", 0.5f)
-                val curZoomFocusY = prefs.getFloat("camera_zoom_focus_y", 0.5f)
+                val curZoomFocusX = getPrefFloat("camera_zoom_focus_x", 0.5f)
+                val curZoomFocusY = getPrefFloat("camera_zoom_focus_y", 0.5f)
                 val curLensId = prefs.getString("camera_lens_id", "") ?: ""
-                val curFocusMode = prefs.getString("camera_focus_mode", "auto") ?: "auto"
-                val curFocusDistance = prefs.getFloat("camera_focus_distance", 0f)
+                val curFocusMode = getPref("camera_focus_mode", "auto")
+                val curFocusDistance = getPrefFloat("camera_focus_distance", 0f)
                 val minFocusDistance = prefs.getFloat("camera_min_focus_distance", 0f)
-                val curExposureMode = prefs.getString("camera_exposure_mode", "auto") ?: "auto"
-                val curISO = prefs.getInt("camera_iso", 400)
-                val curShutter = prefs.getLong("camera_shutter", 20000000L)
+                val curExposureMode = getPref("camera_exposure_mode", "auto")
+                val curISO = getPrefInt("camera_iso", 400)
+                val curShutter = getPrefLong("camera_shutter", 20000000L)
+                val curBinning = service?.let { prefs.getBoolean(it.getLensPrefKey("camera_pixel_binning"), false) } ?: false
                 val isoMin = prefs.getInt("camera_iso_min", 100)
                 val isoMax = prefs.getInt("camera_iso_max", 3200)
                 val shutterMin = prefs.getLong("camera_shutter_min", 100000L)
                 val shutterMax = prefs.getLong("camera_shutter_max", 1000000000L)
 
                 // Get lens list from service
-                val lenses = (context as? StreamingService)?.getBackLenses() ?: emptyList()
+                val lenses = service?.getBackLenses() ?: emptyList()
                 val lensesHtml = StringBuilder("<option value=''>Auto / Logical</option>")
                 lenses.forEach { (id, label) ->
                     val selected = if (id == curLensId) "selected" else ""
@@ -561,6 +577,7 @@ class StreamingServerHelper(
                     .replace("{{CUR_EXPOSURE_MODE}}", curExposureMode)
                     .replace("{{CUR_ISO}}", curISO.toString())
                     .replace("{{CUR_SHUTTER}}", curShutter.toString())
+                    .replace("{{CUR_BINNING}}", if (curBinning) "on" else "off")
                     .replace("{{ISO_MIN}}", isoMin.toString())
                     .replace("{{ISO_MAX}}", isoMax.toString())
                     .replace("{{SHUTTER_MIN}}", shutterMin.toString())

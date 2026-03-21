@@ -257,6 +257,23 @@ class StreamingService : LifecycleService() {
             val characteristics = cameraManager.getCameraCharacteristics(cameraId)
             val prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
+            // Hardware Support Level
+            val hwLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+            val levelStr = when (hwLevel) {
+                CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY -> "LEGACY"
+                CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL -> "EXTERNAL"
+                CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED -> "LIMITED"
+                CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL -> "FULL"
+                CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3 -> "LEVEL_3"
+                else -> "UNKNOWN ($hwLevel)"
+            }
+            Log.i(TAG, "Hardware Support Level for Camera $cameraId: $levelStr")
+
+            // Manual Sensor Support
+            val capabilities = characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+            val hasManualSensor = capabilities?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR) ?: false
+            Log.i(TAG, "Camera $cameraId Manual Sensor Support: $hasManualSensor")
+
             // Flash strength (API 33+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 try {
@@ -277,8 +294,8 @@ class StreamingService : LifecycleService() {
             var finalMinFocus = minFocusDistance
             
             // On some devices, back cameras might report 0 but actually support focus
-            if (finalMinFocus == 0f && lensFacing == CameraSelector.DEFAULT_BACK_CAMERA) {
-                finalMinFocus = 10f // Default fallback for back camera
+            if (finalMinFocus == 0f && lensFacing == CameraSelector.DEFAULT_BACK_CAMERA && cameraId == "0") {
+                finalMinFocus = 10f // Default fallback for main back camera
             }
             
             prefs.edit().putFloat("camera_min_focus_distance", finalMinFocus).apply()
@@ -523,6 +540,60 @@ class StreamingService : LifecycleService() {
 
     fun getLatestSnapshot(): ByteArray? = lastSnapshot
 
+    fun getLensPrefKey(base: String): String {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val selectedLensId = prefs.getString("camera_lens_id", "default") ?: "default"
+        val facing = if (lensFacing == CameraSelector.DEFAULT_FRONT_CAMERA) "front" else "back"
+        return "${base}_${facing}_${selectedLensId}"
+    }
+
+    /**
+     * Performs 2x2 Software Pixel Binning on raw NV21 data.
+     * This reduces resolution by half in both dimensions but increases SNR by averaging pixels.
+     */
+    private fun performSoftwareBinning(data: ByteArray, width: Int, height: Int): Triple<ByteArray, Int, Int> {
+        val newWidth = width / 2
+        val newHeight = height / 2
+        val binnedSize = newWidth * newHeight * 3 / 2
+        val binnedData = ByteArray(binnedSize)
+
+        // 1. Bin the Y (Luminance) plane
+        // Average 2x2 blocks: (P[x,y] + P[x+1,y] + P[x,y+1] + P[x+1,y+1]) / 4
+        for (y in 0 until newHeight) {
+            val srcRow1 = (y * 2) * width
+            val srcRow2 = (y * 2 + 1) * width
+            val dstRow = y * newWidth
+            for (x in 0 until newWidth) {
+                val sum = (data[srcRow1 + x * 2].toInt() and 0xFF) +
+                          (data[srcRow1 + x * 2 + 1].toInt() and 0xFF) +
+                          (data[srcRow2 + x * 2].toInt() and 0xFF) +
+                          (data[srcRow2 + x * 2 + 1].toInt() and 0xFF)
+                binnedData[dstRow + x] = (sum / 4).toByte()
+            }
+        }
+
+        // 2. Bin the UV (Chrominance) plane
+        // In NV21, UV data starts after Y plane. UV is already 2x2 subsampled for 4:2:0.
+        // For a 2x2 binning, we can either subsample or average UV. 
+        // Simple subsampling is often sufficient and faster for UV.
+        val ySize = width * height
+        val binnedYSize = newWidth * newHeight
+        val uvHeight = height / 2
+        val uvWidth = width // UV plane has interleaved U/V pairs, width is same as Y
+        
+        for (y in 0 until (newHeight / 2)) {
+            val srcRow = ySize + (y * 2) * uvWidth
+            val dstRow = binnedYSize + y * newWidth
+            for (x in 0 until (newWidth / 2)) {
+                // Keep the V,U pair
+                binnedData[dstRow + x * 2] = data[srcRow + x * 4]         // V
+                binnedData[dstRow + x * 2 + 1] = data[srcRow + x * 4 + 1] // U
+            }
+        }
+
+        return Triple(binnedData, newWidth, newHeight)
+    }
+
     fun takeHighResSnapshot(callback: (ByteArray?) -> Unit) {
         val capture = imageCapture
         if (capture == null) {
@@ -577,6 +648,21 @@ class StreamingService : LifecycleService() {
         val shutterMin = prefs.getLong("camera_shutter_min", 100000L)
         val shutterMax = prefs.getLong("camera_shutter_max", 1000000000L)
         
+        // Manual Support Check
+        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cameraId = getCameraId(cameraManager)
+        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        val capabilities = characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
+        val hasManualSensor = capabilities?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR) ?: false
+        
+        // Current values for the selected lens
+        val curISO = prefs.getInt(getLensPrefKey("camera_iso"), 400)
+        val curShutter = prefs.getLong(getLensPrefKey("camera_shutter"), 20000000L)
+        val curFocusDistance = prefs.getFloat(getLensPrefKey("camera_focus_distance"), 0f)
+        val curFocusMode = prefs.getString(getLensPrefKey("camera_focus_mode"), "auto") ?: "auto"
+        val curExposureMode = prefs.getString(getLensPrefKey("camera_exposure_mode"), "auto") ?: "auto"
+        val curBinning = prefs.getBoolean(getLensPrefKey("camera_pixel_binning"), false)
+        
         return mapOf(
             "battery" to batteryPct,
             "isCharging" to isCharging,
@@ -586,7 +672,14 @@ class StreamingService : LifecycleService() {
             "isoMin" to isoMin,
             "isoMax" to isoMax,
             "shutterMin" to shutterMin,
-            "shutterMax" to shutterMax
+            "shutterMax" to shutterMax,
+            "hasManualSensor" to hasManualSensor,
+            "curISO" to curISO,
+            "curShutter" to curShutter,
+            "curFocusDistance" to curFocusDistance,
+            "curFocusMode" to curFocusMode,
+            "curExposureMode" to curExposureMode,
+            "curBinning" to curBinning
         )
     }
 
@@ -635,7 +728,7 @@ class StreamingService : LifecycleService() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .apply {
-                    val quality = prefs.getString("camera_resolution", "low") ?: "low"
+                    val quality = prefs.getString(getLensPrefKey("camera_resolution"), "low") ?: "low"
                     val targetResolution = cameraResolutionHelper?.getResolutionForQuality(quality)
 
                     if (targetResolution != null) {
@@ -718,12 +811,19 @@ class StreamingService : LifecycleService() {
     }
 
     private fun getCameraId(cameraManager: CameraManager): String {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val selectedLensId = prefs.getString("camera_lens_id", null)
+
         return when (lensFacing) {
             CameraSelector.DEFAULT_BACK_CAMERA -> {
-                cameraManager.cameraIdList.find { id ->
-                    val characteristics = cameraManager.getCameraCharacteristics(id)
-                    characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-                } ?: "0"
+                if (!selectedLensId.isNullOrEmpty()) {
+                    selectedLensId
+                } else {
+                    cameraManager.cameraIdList.find { id ->
+                        val characteristics = cameraManager.getCameraCharacteristics(id)
+                        characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+                    } ?: "0"
+                }
             }
             CameraSelector.DEFAULT_FRONT_CAMERA -> {
                 cameraManager.cameraIdList.find { id ->
@@ -771,11 +871,11 @@ class StreamingService : LifecycleService() {
         }
 
         // Zoom (Basic CameraX API)
-        val requestedZoomFactor = prefs.getString("camera_zoom", "1.0")?.toFloatOrNull() ?: 1.0f
+        val requestedZoomFactor = prefs.getString(getLensPrefKey("camera_zoom"), "1.0")?.toFloatOrNull() ?: 1.0f
         cam.cameraControl.setZoomRatio(requestedZoomFactor)
 
         // Exposure Compensation (Basic CameraX API)
-        val exposureValue = prefs.getString("camera_exposure", "0")?.toIntOrNull() ?: 0
+        val exposureValue = prefs.getString(getLensPrefKey("camera_exposure"), "0")?.toIntOrNull() ?: 0
         cam.cameraControl.setExposureCompensationIndex(exposureValue)
 
         // Apply Unified Camera2 Interop Settings (Focus, ISO, Shutter, Torch Strength)
@@ -791,21 +891,33 @@ class StreamingService : LifecycleService() {
             val builder = CaptureRequestOptions.Builder()
 
             // 1. Manual Focus
-            val focusMode = prefs.getString("camera_focus_mode", "auto") ?: "auto"
+            val focusMode = prefs.getString(getLensPrefKey("camera_focus_mode"), "auto") ?: "auto"
             if (focusMode == "manual") {
-                val distance = prefs.getFloat("camera_focus_distance", 0f)
+                val distance = prefs.getFloat(getLensPrefKey("camera_focus_distance"), 0f)
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
                 builder.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, distance)
+                Log.d(TAG, "Manual Focus distance set: $distance")
+            } else {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
             }
 
             // 2. Manual Exposure (ISO/Shutter)
-            val exposureMode = prefs.getString("camera_exposure_mode", "auto") ?: "auto"
+            val exposureMode = prefs.getString(getLensPrefKey("camera_exposure_mode"), "auto") ?: "auto"
             if (exposureMode == "manual") {
-                val iso = prefs.getInt("camera_iso", 400)
-                val shutterNs = prefs.getLong("camera_shutter", 20000000L)
+                val iso = prefs.getInt(getLensPrefKey("camera_iso"), 400)
+                val shutterNs = prefs.getLong(getLensPrefKey("camera_shutter"), 20000000L)
+                
+                // For manual exposure, we must turn off AE
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, iso)
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, shutterNs)
+                
+                // Some devices require CONTROL_MODE to be MANUAL or OFF when overriding AE/AF
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+                
+                Log.d(TAG, "Manual Exposure set: ISO=$iso, Shutter=$shutterNs ns")
+            } else {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             }
 
             // 3. Torch Strength (API 33+)
@@ -815,7 +927,7 @@ class StreamingService : LifecycleService() {
                     @Suppress("UNCHECKED_CAST")
                     val flashStrengthLevelKey = flashStrengthLevelField.get(null) as CaptureRequest.Key<Int>
                     
-                    val strength = prefs.getString("camera_torch_strength", "1")?.toIntOrNull() ?: 1
+                    val strength = prefs.getString(getLensPrefKey("camera_torch_strength"), "1")?.toIntOrNull() ?: 1
                     builder.setCaptureRequestOption(flashStrengthLevelKey, strength)
                     
                     val torchPref = prefs.getString("camera_torch", "off")
@@ -826,7 +938,7 @@ class StreamingService : LifecycleService() {
             }
 
             camera2Control.captureRequestOptions = builder.build()
-            Log.d(TAG, "Applied unified Camera2 settings: Focus=$focusMode, Exposure=$exposureMode")
+            Log.i(TAG, "Applied unified Camera2 settings: Focus=$focusMode, Exposure=$exposureMode")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to apply Camera2 interop settings: ${e.message}")
         }
@@ -866,27 +978,27 @@ class StreamingService : LifecycleService() {
             }
             "torch_strength" -> {
                 val strength = value.toIntOrNull() ?: return
-                prefs.edit().putString("camera_torch_strength", strength.toString()).apply()
+                prefs.edit().putString(getLensPrefKey("camera_torch_strength"), strength.toString()).apply()
                 launchMain { setTorchStrength(strength) }
             }
             "zoom" -> {
                 val zoomFactor = value.toFloatOrNull() ?: return
-                prefs.edit().putString("camera_zoom", zoomFactor.toString()).apply()
+                prefs.edit().putString(getLensPrefKey("camera_zoom"), zoomFactor.toString()).apply()
                 launchMain { cam?.cameraControl?.setZoomRatio(zoomFactor) }
             }
             "exposure" -> {
                 val exposure = value.toIntOrNull() ?: return
-                prefs.edit().putString("camera_exposure", exposure.toString()).apply()
+                prefs.edit().putString(getLensPrefKey("camera_exposure"), exposure.toString()).apply()
                 launchMain { cam?.cameraControl?.setExposureCompensationIndex(exposure) }
             }
             "contrast" -> {
                 val contrast = value.toIntOrNull() ?: return
-                prefs.edit().putString("camera_contrast", contrast.toString()).apply()
+                prefs.edit().putString(getLensPrefKey("camera_contrast"), contrast.toString()).apply()
                 Log.i(TAG, "Remote Control: Contrast set to $contrast (software-based)")
             }
             "resolution" -> {
                 if (value in listOf("low", "medium", "high", "4k", "1080p", "720p", "480p", "240p")) {
-                    prefs.edit().putString("camera_resolution", value).apply()
+                    prefs.edit().putString(getLensPrefKey("camera_resolution"), value).apply()
                     launchMain { startCamera() } // Restart
                 }
             }
@@ -904,11 +1016,11 @@ class StreamingService : LifecycleService() {
             // Other settings like scale/delay/rotate are handled in processImage
             "scale" -> {
                 val scale = value.toFloatOrNull() ?: return
-                if (scale in 0.5f..2.0f) prefs.edit().putString("stream_scale", value).apply()
+                if (scale in 0.5f..2.0f) prefs.edit().putString(getLensPrefKey("stream_scale"), value).apply()
             }
             "delay" -> {
                 val delay = value.toLongOrNull() ?: return
-                if (delay in 10L..1000L) prefs.edit().putString("stream_delay", value).apply()
+                if (delay in 10L..1000L) prefs.edit().putString(getLensPrefKey("stream_delay"), value).apply()
             }
             "rotate" -> {
                 val isFront = lensFacing == CameraSelector.DEFAULT_FRONT_CAMERA
@@ -923,37 +1035,42 @@ class StreamingService : LifecycleService() {
                     val x = parts[0].toFloatOrNull() ?: 0.5f
                     val y = parts[1].toFloatOrNull() ?: 0.5f
                     prefs.edit()
-                        .putFloat("camera_zoom_focus_x", x)
-                        .putFloat("camera_zoom_focus_y", y)
+                        .putFloat(getLensPrefKey("camera_zoom_focus_x"), x)
+                        .putFloat(getLensPrefKey("camera_zoom_focus_y"), y)
                         .apply()
                 }
             }
             "focus_mode" -> {
                 if (value in listOf("auto", "manual")) {
-                    prefs.edit().putString("camera_focus_mode", value).apply()
+                    prefs.edit().putString(getLensPrefKey("camera_focus_mode"), value).apply()
                     launchMain { applyCamera2InteropSettings() }
                 }
             }
             "focus_distance" -> {
                 val distance = value.toFloatOrNull() ?: return
-                prefs.edit().putFloat("camera_focus_distance", distance).apply()
+                prefs.edit().putFloat(getLensPrefKey("camera_focus_distance"), distance).apply()
                 launchMain { applyCamera2InteropSettings() }
             }
             "exposure_mode" -> {
                 if (value in listOf("auto", "manual")) {
-                    prefs.edit().putString("camera_exposure_mode", value).apply()
+                    prefs.edit().putString(getLensPrefKey("camera_exposure_mode"), value).apply()
                     launchMain { applyCamera2InteropSettings() }
                 }
             }
             "iso" -> {
                 val iso = value.toIntOrNull() ?: return
-                prefs.edit().putInt("camera_iso", iso).apply()
+                prefs.edit().putInt(getLensPrefKey("camera_iso"), iso).apply()
                 launchMain { applyCamera2InteropSettings() }
             }
             "shutter" -> {
                 val shutter = value.toLongOrNull() ?: return
-                prefs.edit().putLong("camera_shutter", shutter).apply()
+                prefs.edit().putLong(getLensPrefKey("camera_shutter"), shutter).apply()
                 launchMain { applyCamera2InteropSettings() }
+            }
+            "pixel_binning" -> {
+                val enabled = value == "1" || value == "on"
+                prefs.edit().putBoolean(getLensPrefKey("camera_pixel_binning"), enabled).apply()
+                Log.i(TAG, "Pixel Binning: ${if (enabled) "Enabled" else "Disabled"}")
             }
             "autofocus" -> {
                 launchMain { triggerAutoFocus() }
@@ -966,7 +1083,7 @@ class StreamingService : LifecycleService() {
     private fun processImage(image: ImageProxy) {
         try {
             val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-            val delay = prefs.getString("stream_delay", "33")?.toLongOrNull() ?: 33L
+            val delay = prefs.getString(getLensPrefKey("stream_delay"), "33")?.toLongOrNull() ?: 33L
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastFrameTime < delay) {
                 return
@@ -978,7 +1095,7 @@ class StreamingService : LifecycleService() {
             val prefKey = if (isFront) "camera_manual_rotate_front" else "camera_manual_rotate_back"
             val manualRotation = prefs.getInt(prefKey, 0)
             val totalRotation = (autoRotation + manualRotation) % 360
-            val quality = prefs.getString("camera_resolution", "low") ?: "low"
+            val quality = prefs.getString(getLensPrefKey("camera_resolution"), "low") ?: "low"
             
             // Hard target widths for software downscaling to ensure user actually gets lower quality/bandwidth
             val targetWidth = when (quality) {
@@ -990,27 +1107,40 @@ class StreamingService : LifecycleService() {
                 else -> 640
             }
 
-            val scaleFactor = prefs.getString("stream_scale", "1.0")?.toFloatOrNull() ?: 1.0f
-            val zoomFactor = prefs.getString("camera_zoom", "1.0")?.toFloatOrNull() ?: 1.0f
-            // Use cached values for performance (reduces frame jitter)
-            val zoomFocusX = this.zoomFocusX
-            val zoomFocusY = this.zoomFocusY
-            val contrastValue = prefs.getString("camera_contrast", "0")?.toIntOrNull() ?: 0
+            val scaleFactor = prefs.getString(getLensPrefKey("stream_scale"), "1.0")?.toFloatOrNull() ?: 1.0f
+            val zoomFactor = prefs.getString(getLensPrefKey("camera_zoom"), "1.0")?.toFloatOrNull() ?: 1.0f
+            // Use lens-specific cached values or preference
+            val zoomFocusX = prefs.getFloat(getLensPrefKey("camera_zoom_focus_x"), 0.5f)
+            val zoomFocusY = prefs.getFloat(getLensPrefKey("camera_zoom_focus_y"), 0.5f)
+            val contrastValue = prefs.getString(getLensPrefKey("camera_contrast"), "0")?.toIntOrNull() ?: 0
 
             // Convert YUV_420_888 to NV21
-            val nv21 = convertYUV420toNV21(image)
+            var nv21 = convertYUV420toNV21(image)
             val crop = image.cropRect
             
-            // Ensure dimensions are even to avoid issues with some encoders/decoders
-            val width = crop.width() and 1.inv()
-            val height = crop.height() and 1.inv()
+            // Initial dimensions from crop
+            var width = crop.width() and 1.inv()
+            var height = crop.height() and 1.inv()
+            
+            // Software Pixel Binning (2x2) - Process at raw NV21 level for maximum SNR gain
+            val isBinningEnabled = prefs.getBoolean(getLensPrefKey("camera_pixel_binning"), false)
+            if (isBinningEnabled && width >= 640 && height >= 480) {
+                try {
+                    val binned = performSoftwareBinning(nv21, width, height)
+                    nv21 = binned.first
+                    width = binned.second
+                    height = binned.third
+                } catch (e: Exception) {
+                    Log.e(TAG, "Pixel Binning failed: ${e.message}")
+                }
+            }
             
             // Log resolution occasionally
             if (SystemClock.elapsedRealtime() % 10000 < 100) {
-                Log.d(TAG, "Source frame resolution: ${width}x${height}")
+                Log.d(TAG, "Processing frame: ${width}x${height}, Binning: $isBinningEnabled")
             }
 
-            // Convert NV21 to JPEG - USE CROP DIMENSIONS
+            // Convert NV21 to JPEG - USE FINAL DIMENSIONS
             var jpegBytes = convertNV21toJPEG(nv21, width, height)
             
             // Store as latest snapshot

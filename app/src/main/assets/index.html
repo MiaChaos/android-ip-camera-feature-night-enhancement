@@ -413,17 +413,7 @@
           </select>
 
           <label for="zoom">Zoom <span class='val-badge' id='zoomVal'>{{CUR_ZOOM}}x</span></label>
-          <input id="zoom" type='range' min='1' max='8' step='0.1' value='{{CUR_ZOOM}}' oninput='
-            const v = parseFloat(this.value);
-            document.getElementById("zoomVal").innerText = v + "x"; 
-            if (v <= 1.0) {
-              zoomFocusX = 0.5;
-              zoomFocusY = 0.5;
-              fetch("/?zoom_focus=0.500,0.500");
-            }
-            updateMinimapViewport(); 
-            fetch("/?zoom=" + v);
-          '>
+          <input id="zoom" type='range' min='1' max='8' step='0.1' value='{{CUR_ZOOM}}' oninput='updateZoom(this.value)'>
 
           <label for="scale">Scale <span class='val-badge' id='scaleVal'>{{CUR_SCALE}}x</span></label>
           <input id="scale" type='range' min='0.5' max='2.0' step='0.1' value='{{CUR_SCALE}}' oninput='setView("original"); document.getElementById("scaleVal").innerText=this.value+"x";fetch("/?scale="+this.value)'>
@@ -443,7 +433,7 @@
             
             <button id="afTriggerBtn" class="btn btn-action" style="width: 100%; margin-bottom: 10px; background: #34c759;" onclick="triggerAutoFocus()">🎯 Force Auto Focus</button>
             
-            <div id="manualFocusGroup" style="display: {{MF_DISPLAY}}">
+            <div id="manualFocusGroup" style="display: none;">
               <div id="focusUnsupported" style="display: none; color: #ff9500; font-size: 12px; margin-bottom: 10px;">
                 ⚠️ Manual focus not supported on this lens.
               </div>
@@ -475,12 +465,17 @@
             <!-- 2. Manual Exposure Control -->
             <div style="margin-bottom: 20px; padding: 10px; background: #1a1a1a; border-radius: 6px;">
               <label>Manual Exposure (Hardware)</label>
+              
+              <div id="manualExposureUnsupported" style="display: none; color: #ff9500; font-size: 11px; margin-bottom: 10px; border: 1px dashed #ff9500; padding: 5px; border-radius: 4px;">
+                ⚠️ Hardware manual exposure (ISO/Shutter) is not supported by this lens on your device.
+              </div>
+
               <div style="margin-bottom: 10px; display: flex; gap: 5px;">
                 <button id='aeBtn' class='btn {{AE_ACTIVE}}' style='flex: 1;' onclick='setExposureMode("auto")'>Auto</button>
                 <button id='meBtn' class='btn {{ME_ACTIVE}}' style='flex: 1;' onclick='setExposureMode("manual")'>Manual</button>
               </div>
               
-              <div id="manualExposureGroup" style="display: {{ME_DISPLAY}}">
+              <div id="manualExposureGroup" style="display: none;">
                 <label for="isoSlider">ISO <span class='val-badge' id='isoVal'>{{CUR_ISO}}</span></label>
                 <input id="isoSlider" type='range' min='{{ISO_MIN}}' max='{{ISO_MAX}}' step='10' value='{{CUR_ISO}}' oninput='updateExposure()'>
                 
@@ -498,10 +493,42 @@
             </div>
 
             <!-- 4. Pure Monochrome Mode -->
-            <div style="margin-bottom: 10px;">
+            <div style="margin-bottom: 20px;">
               <label>Pure Monochrome Mode</label>
               <button id="monoBtn" class="btn btn-action" style="width: 100%; background: #444;" onclick="toggleMonochrome()">Enable Monochrome</button>
-              <p style="font-size: 10px; color: #888;">Removes color noise in extreme low light.</p>
+            </div>
+
+            <!-- 5. Gamma Correction (Gamma Boost) -->
+            <div style="margin-bottom: 20px;">
+              <label>Gamma Boost (Curves) <span class='val-badge' id='gammaVal'>1.0</span></label>
+              <input id="gammaSlider" type='range' min='0.5' max='3.0' step='0.1' value='1.0' oninput='updateNightSettings()'>
+              <p style="font-size: 10px; color: #888;">Lift shadows without blowing out highlights.</p>
+            </div>
+
+            <!-- 6. False Color / Heatmap Mode -->
+            <div style="margin-bottom: 20px;">
+              <label>False Color (Thermal Simulation)</label>
+              <button id="heatmapBtn" class="btn btn-action" style="width: 100%; background: #444;" onclick="toggleHeatmap()">Enable Heatmap</button>
+            </div>
+
+            <!-- 7. Edge Sharpening (Edge Detail) -->
+            <div style="margin-bottom: 20px;">
+              <label>Edge Sharpening <span class='val-badge' id='sharpenVal'>0.0</span></label>
+              <input id="sharpenSlider" type='range' min='0' max='2.0' step='0.1' value='0' oninput='updateNightSettings()'>
+              <p style="font-size: 10px; color: #888;">Enhance object outlines in fuzzy low light.</p>
+            </div>
+
+            <!-- 8. Local Contrast Enhancement (CLAHE Simulation) -->
+            <div style="margin-bottom: 20px;">
+              <label>Local Adaptive Contrast <span class='val-badge' id='claheVal'>OFF</span></label>
+              <input id="claheSlider" type='range' min='0' max='1.0' step='0.1' value='0' oninput='updateNightSettings()'>
+            </div>
+
+            <!-- 9. Hardware-Side Pixel Binning (SNR Boost) -->
+            <div style="margin-bottom: 10px;">
+              <label>Pixel Binning (SNR Boost)</label>
+              <button id="binningBtn" class="btn btn-action" style="width: 100%; background: #444;" onclick="toggleBinning()">Enable Pixel Binning</button>
+              <p style="font-size: 10px; color: #888;">Hardware-side processing to reduce noise before sending. Reduces resolution by half.</p>
             </div>
 
           </div>
@@ -516,8 +543,24 @@
             <label for="motionSensitivity">Sensitivity (Analysis Width) <span class='val-badge' id='sensVal'>32px</span></label>
             <input id="motionSensitivity" type='range' min='8' max='512' step='8' value='32' oninput='updateMotionSettings()'>
             
-            <label for="motionThreshold">Trigger Threshold <span class='val-badge' id='threshVal'>15%</span></label>
-            <input id="motionThreshold" type='range' min='1' max='100' step='1' value='15' oninput='updateMotionSettings()'>
+            <label for="motionThreshold">Trigger Threshold <span class='val-badge' id='threshVal'>1.0%</span></label>
+            <input id="motionThreshold" type='range' min='0.1' max='20.0' step='0.1' value='1.0' oninput='updateMotionSettings()'>
+
+            <label for="pixelDiffThreshold">Pixel Change Intensity <span class='val-badge' id='diffVal'>80</span></label>
+            <input id="pixelDiffThreshold" type='range' min='10' max='200' step='5' value='80' oninput='updateMotionSettings()'>
+            <p style="font-size: 10px; color: #888;">Lower = More sensitive to subtle color/light changes.</p>
+
+            <div style="margin-top: 10px; margin-bottom: 15px;">
+              <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="slowMotionMode" onchange="updateMotionSettings()">
+                <span>Slow Motion Mode (Gecko Mode 🦎)</span>
+              </label>
+              <div id="geckoIntervalGroup" style="display: none; margin-top: 10px; padding-left: 20px;">
+                <label for="geckoInterval">Gecko Contrast Interval <span class='val-badge' id='geckoVal'>2000ms</span></label>
+                <input id="geckoInterval" type='range' min='100' max='5000' step='100' value='2000' oninput='updateMotionSettings()'>
+              </div>
+              <p style="font-size: 10px; color: #888; margin-top: 5px;">Compares frames over a longer interval to detect extremely slow movement.</p>
+            </div>
             
             <!-- Sound Settings Collapsible -->
             <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
@@ -576,10 +619,128 @@
       let nightVisionEnabled = false;
       let nightAvgFrames = 1;
       let nightGain = 0;
+      let nightGamma = 1.0;
+      let nightSharpen = 0;
+      let nightClahe = 0;
+      let isBinning = ('{{CUR_BINNING}}' === 'on');
       let isMonochrome = false;
+      let isHeatmap = false;
       let frameBuffer = [];
+      let wakeLock = null;
+
+      // Initial state from server templates
+      const initialFocusMode = '{{CUR_FOCUS_MODE}}';
+      const initialExposureMode = '{{CUR_EXPOSURE_MODE}}';
+
+      // Pre-calculated Heatmap Lookup Table (LUT)
+      const heatmapLUT = new Uint8Array(256 * 3);
+      for (let i = 0; i < 256; i++) {
+        // Simple jet-like color mapping: 0 (Blue) -> 255 (Red)
+        const t = i / 255;
+        heatmapLUT[i * 3]     = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(t * 4 - 3)))); // R
+        heatmapLUT[i * 3 + 1] = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(t * 4 - 2)))); // G
+        heatmapLUT[i * 3 + 2] = Math.max(0, Math.min(255, 255 * (1.5 - Math.abs(t * 4 - 1)))); // B
+      }
+
+      // Persistence: Load settings from localStorage
+      function loadUISettings() {
+        try {
+          const saved = localStorage.getItem('cam_ui_settings');
+          if (saved) {
+            const settings = JSON.parse(saved);
+            if (settings.viewMode) setView(settings.viewMode);
+            if (settings.avDelay) {
+              const avDelay = document.getElementById('avDelay');
+              const avDelayVal = document.getElementById('avDelayVal');
+              avDelay.value = settings.avDelay;
+              avDelayVal.textContent = settings.avDelay + 's';
+              videoDelayMs = parseFloat(settings.avDelay) * 1000;
+            }
+            if (settings.nightVisionEnabled) toggleNightVision();
+            if (settings.nightAvgFrames) {
+              document.getElementById('avgFrames').value = settings.nightAvgFrames;
+              updateNightSettings();
+            }
+            if (settings.nightGain) {
+              document.getElementById('gainSlider').value = settings.nightGain;
+              updateNightSettings();
+            }
+            if (settings.nightGamma) {
+              document.getElementById('gammaSlider').value = settings.nightGamma;
+              updateNightSettings();
+            }
+            if (settings.nightSharpen) {
+              document.getElementById('sharpenSlider').value = settings.nightSharpen;
+              updateNightSettings();
+            }
+            if (settings.nightClahe) {
+              document.getElementById('claheSlider').value = settings.nightClahe;
+              updateNightSettings();
+            }
+            if (settings.isBinning) toggleBinning(true);
+            if (settings.isMonochrome) toggleMonochrome();
+            if (settings.isHeatmap) toggleHeatmap();
+            
+            // Motion detection persistence
+            if (settings.motionEnabled) toggleMotion();
+            if (settings.motionSensitivity) document.getElementById('motionSensitivity').value = settings.motionSensitivity;
+            if (settings.motionThreshold) document.getElementById('motionThreshold').value = settings.motionThreshold;
+            if (settings.pixelDiffThreshold) document.getElementById('pixelDiffThreshold').value = settings.pixelDiffThreshold;
+            if (settings.isSlowMotionMode) document.getElementById('slowMotionMode').checked = settings.isSlowMotionMode;
+            if (settings.geckoInterval) document.getElementById('geckoInterval').value = settings.geckoInterval;
+            updateMotionSettings();
+          }
+        } catch (e) { console.warn('Failed to load settings', e); }
+      }
+
+      function saveUISettings() {
+        try {
+          const settings = {
+            viewMode,
+            avDelay: document.getElementById('avDelay').value,
+            nightVisionEnabled,
+            nightAvgFrames,
+            nightGain,
+            nightGamma,
+            nightSharpen,
+            nightClahe,
+            isBinning,
+            isMonochrome,
+            isHeatmap,
+            motionEnabled,
+            motionSensitivity: document.getElementById('motionSensitivity').value,
+            motionThreshold: document.getElementById('motionThreshold').value,
+            pixelDiffThreshold: document.getElementById('pixelDiffThreshold').value,
+            isSlowMotionMode: document.getElementById('slowMotionMode').checked,
+            geckoInterval: document.getElementById('geckoInterval').value
+          };
+          localStorage.setItem('cam_ui_settings', JSON.stringify(settings));
+        } catch (e) {}
+      }
+
       const nightProcessingCanvas = document.createElement('canvas');
       const nightProcessingCtx = nightProcessingCanvas.getContext('2d');
+
+      async function requestWakeLock() {
+        if (!('wakeLock' in navigator)) return;
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log('Wake Lock active');
+          wakeLock.addEventListener('release', () => {
+            console.log('Wake Lock released');
+          });
+        } catch (err) {
+          console.error(`${err.name}, ${err.message}`);
+        }
+      }
+
+      function releaseWakeLock() {
+        if (wakeLock) {
+          wakeLock.release().then(() => {
+            wakeLock = null;
+          });
+        }
+      }
 
       function toggleNightVision() {
         nightVisionEnabled = !nightVisionEnabled;
@@ -598,6 +759,7 @@
           btn.classList.remove('active');
           btn.textContent = '🌙 Night Vision';
         }
+        saveUISettings();
       }
 
       function toggleNightPanel() {
@@ -619,6 +781,20 @@
         const gain = parseInt(document.getElementById('gainSlider').value);
         nightGain = gain;
         document.getElementById('gainVal').textContent = gain + '%';
+
+        const gamma = parseFloat(document.getElementById('gammaSlider').value);
+        nightGamma = gamma;
+        document.getElementById('gammaVal').textContent = gamma.toFixed(1);
+
+        const sharpen = parseFloat(document.getElementById('sharpenSlider').value);
+        nightSharpen = sharpen;
+        document.getElementById('sharpenVal').textContent = sharpen.toFixed(1);
+
+        const clahe = parseFloat(document.getElementById('claheSlider').value);
+        nightClahe = clahe;
+        document.getElementById('claheVal').textContent = clahe > 0 ? (clahe * 100).toFixed(0) + '%' : 'OFF';
+
+        saveUISettings();
       }
 
       function setExposureMode(mode) {
@@ -662,6 +838,24 @@
         document.getElementById('shutterLabel').textContent = 'Approx. 1/' + shutterSec + 's exposure';
       }
 
+      function toggleBinning(skipFetch = false) {
+        isBinning = !isBinning;
+        const btn = document.getElementById('binningBtn');
+        if (isBinning) {
+          btn.textContent = 'Disable Pixel Binning';
+          btn.style.background = '#007AFF';
+          btn.classList.add('active');
+        } else {
+          btn.textContent = 'Enable Pixel Binning';
+          btn.style.background = '#444';
+          btn.classList.remove('active');
+        }
+        if (!skipFetch) {
+          fetch("/?pixel_binning=" + (isBinning ? "on" : "off"));
+        }
+        saveUISettings();
+      }
+
       function toggleMonochrome() {
         isMonochrome = !isMonochrome;
         const btn = document.getElementById('monoBtn');
@@ -669,11 +863,29 @@
           btn.textContent = 'Disable Monochrome';
           btn.style.background = '#007AFF';
           btn.classList.add('active');
+          if (isHeatmap) toggleHeatmap(); // Mutually exclusive for better visibility
         } else {
           btn.textContent = 'Enable Monochrome';
           btn.style.background = '#444';
           btn.classList.remove('active');
         }
+        saveUISettings();
+      }
+
+      function toggleHeatmap() {
+        isHeatmap = !isHeatmap;
+        const btn = document.getElementById('heatmapBtn');
+        if (isHeatmap) {
+          btn.textContent = 'Disable Heatmap';
+          btn.style.background = '#ff3b30';
+          btn.classList.add('active');
+          if (isMonochrome) toggleMonochrome(); // Mutually exclusive
+        } else {
+          btn.textContent = 'Enable Heatmap';
+          btn.style.background = '#444';
+          btn.classList.remove('active');
+        }
+        saveUISettings();
       }
 
       function toggleGallery() {
@@ -816,6 +1028,87 @@
                 shutterSlider.max = data.shutterMax;
               }
             }
+
+            // Sync current manual values if they changed (e.g. lens switch or remote)
+            if (data.curISO !== undefined) {
+              const iso = document.getElementById('isoSlider');
+              if (iso && document.activeElement !== iso) iso.value = data.curISO;
+              const isoVal = document.getElementById('isoVal');
+              if (isoVal) isoVal.textContent = data.curISO;
+            }
+            if (data.curShutter !== undefined) {
+              const shutter = document.getElementById('shutterSlider');
+              if (shutter && document.activeElement !== shutter) shutter.value = data.curShutter;
+              updateExposureLabel();
+            }
+            if (data.curFocusDistance !== undefined) {
+              const focus = document.getElementById('focusDist');
+              if (focus && document.activeElement !== focus) focus.value = data.curFocusDistance;
+              const focusVal = document.getElementById('focusVal');
+              if (focusVal) focusVal.textContent = (data.curFocusDistance === 0) ? 'Infinity' : data.curFocusDistance.toFixed(2);
+            }
+            
+            // Sync Modes (Auto/Manual)
+            if (data.curFocusMode !== undefined) {
+              const afBtn = document.getElementById('afBtn');
+              const mfBtn = document.getElementById('mfBtn');
+              const group = document.getElementById('manualFocusGroup');
+              if (data.curFocusMode === 'auto') {
+                if (afBtn) afBtn.classList.add('active');
+                if (mfBtn) mfBtn.classList.remove('active');
+                if (group) group.style.display = 'none';
+              } else {
+                if (afBtn) afBtn.classList.remove('active');
+                if (mfBtn) mfBtn.classList.add('active');
+                if (group) group.style.display = 'block';
+              }
+            }
+            // Sync Exposure Mode
+            const meUnsupported = document.getElementById('manualExposureUnsupported');
+            const meBtn = document.getElementById('meBtn');
+            const aeBtn = document.getElementById('aeBtn');
+            const meGroup = document.getElementById('manualExposureGroup');
+
+            if (data.hasManualSensor === false) {
+              if (meUnsupported) meUnsupported.style.display = 'block';
+              if (meBtn) meBtn.style.display = 'none';
+              if (aeBtn) aeBtn.style.display = 'none';
+              if (meGroup) meGroup.style.display = 'none';
+            } else {
+              if (meUnsupported) meUnsupported.style.display = 'none';
+              if (meBtn) meBtn.style.display = 'block';
+              if (aeBtn) aeBtn.style.display = 'block';
+
+              if (data.curExposureMode !== undefined) {
+                if (data.curExposureMode === 'auto') {
+                  if (aeBtn) aeBtn.classList.add('active');
+                  if (meBtn) meBtn.classList.remove('active');
+                  if (meGroup) meGroup.style.display = 'none';
+                } else {
+                  if (aeBtn) aeBtn.classList.remove('active');
+                  if (meBtn) meBtn.classList.add('active');
+                  if (meGroup) meGroup.style.display = 'block';
+                }
+              }
+            }
+
+            // Sync Pixel Binning
+            if (data.curBinning !== undefined) {
+              const btn = document.getElementById('binningBtn');
+              if (btn) {
+                const enabled = (data.curBinning === true || data.curBinning === "true");
+                isBinning = enabled;
+                if (enabled) {
+                  btn.textContent = 'Disable Pixel Binning';
+                  btn.style.background = '#007AFF';
+                  btn.classList.add('active');
+                } else {
+                  btn.textContent = 'Enable Pixel Binning';
+                  btn.style.background = '#444';
+                  btn.classList.remove('active');
+                }
+              }
+            }
           })
           .catch(() => {});
       }
@@ -856,6 +1149,7 @@
           controls.style.display = 'block';
           state.textContent = 'ON';
           state.style.color = '#007AFF';
+          requestWakeLock();
         } else {
           btn.textContent = 'Enable Motion Detection';
           btn.classList.remove('active');
@@ -863,6 +1157,8 @@
           state.textContent = 'OFF';
           state.style.color = '#888';
           prevFrameData = null;
+          motionAccumulator = null;
+          releaseWakeLock();
         }
       }
 
@@ -871,15 +1167,36 @@
         panel.style.display = (panel.style.display === 'none') ? 'block' : 'none';
       }
 
+      let pixelDiffThreshold = 80;
+      let isSlowMotionMode = false;
+      let geckoInterval = 2000;
+      let motionAccumulator = null;
+      let lastAccumulationTime = 0;
+
       function updateMotionSettings() {
         motionSensitivity = parseInt(document.getElementById('motionSensitivity').value);
-        motionThreshold = parseInt(document.getElementById('motionThreshold').value);
+        motionThreshold = parseFloat(document.getElementById('motionThreshold').value);
+        pixelDiffThreshold = parseInt(document.getElementById('pixelDiffThreshold').value);
+        isSlowMotionMode = document.getElementById('slowMotionMode').checked;
+        geckoInterval = parseInt(document.getElementById('geckoInterval').value);
         motionVolume = parseInt(document.getElementById('alertVolume').value) / 100;
         motionAlertType = document.getElementById('alertType').value;
 
         document.getElementById('sensVal').textContent = motionSensitivity + 'px';
-        document.getElementById('threshVal').textContent = motionThreshold + '%';
+        document.getElementById('threshVal').textContent = motionThreshold.toFixed(1) + '%';
+        document.getElementById('diffVal').textContent = pixelDiffThreshold;
+        document.getElementById('geckoVal').textContent = geckoInterval + 'ms';
         document.getElementById('volVal').textContent = Math.floor(motionVolume * 100) + '%';
+        
+        const geckoGroup = document.getElementById('geckoIntervalGroup');
+        if (geckoGroup) {
+          geckoGroup.style.display = isSlowMotionMode ? 'block' : 'none';
+        }
+
+        // Reset accumulation when settings change
+        motionAccumulator = null;
+        prevFrameData = null;
+        saveUISettings();
       }
 
       function playAlert(force = false) {
@@ -930,13 +1247,60 @@
         if (motionDebugCanvas.width !== w || motionDebugCanvas.height !== h) {
           motionDebugCanvas.width = w;
           motionDebugCanvas.height = h;
+          prevFrameData = null;
+          motionAccumulator = null;
         }
         
         motionDebugCtx.drawImage(bmp, 0, 0, w, h);
+        
+        // Apply Night Enhancement to motion analysis frame if enabled
+        // This ensures motion detection works in low light by amplifying the signal before comparison
+        if (nightGain > 0 || isMonochrome) {
+          const frameData = motionDebugCtx.getImageData(0, 0, w, h);
+          const d = frameData.data;
+          
+          // Apply Gain
+          if (nightGain > 0) {
+            const factor = 1.0 + (nightGain / 100.0);
+            for (let i = 0; i < d.length; i += 4) {
+              d[i] = Math.min(255, d[i] * factor);
+              d[i+1] = Math.min(255, d[i+1] * factor);
+              d[i+2] = Math.min(255, d[i+2] * factor);
+            }
+          }
+          
+          // Apply Monochrome (helps reduce color noise in motion comparison)
+          if (isMonochrome) {
+            for (let i = 0; i < d.length; i += 4) {
+              const gray = (d[i] + d[i+1] + d[i+2]) / 3;
+              d[i] = d[i+1] = d[i+2] = gray;
+            }
+          }
+          
+          motionDebugCtx.putImageData(frameData, 0, 0);
+        }
+
         const currentFrame = motionDebugCtx.getImageData(0, 0, w, h);
         const data = currentFrame.data;
         
-        if (prevFrameData && prevFrameData.length === data.length) {
+        if (isSlowMotionMode) {
+          const now = Date.now();
+          if (!motionAccumulator || now - lastAccumulationTime > geckoInterval) {
+            if (motionAccumulator) {
+              compareAndTrigger(data, motionAccumulator.data, w, h);
+            }
+            motionAccumulator = currentFrame;
+            lastAccumulationTime = now;
+          }
+        } else {
+          if (prevFrameData && prevFrameData.length === data.length) {
+            compareAndTrigger(data, prevFrameData, w, h);
+          }
+        }
+        prevFrameData = data;
+      }
+
+      function compareAndTrigger(data, referenceData, w, h) {
           let changedPixels = 0;
           const totalPixels = w * h;
           
@@ -950,11 +1314,11 @@
           
           for (let i = 0; i < data.length; i += 4) {
             // Compare luminance/diff (R, G, B)
-            const diff = Math.abs(data[i] - prevFrameData[i]) + 
-                         Math.abs(data[i+1] - prevFrameData[i+1]) + 
-                         Math.abs(data[i+2] - prevFrameData[i+2]);
+            const diff = Math.abs(data[i] - referenceData[i]) + 
+                         Math.abs(data[i+1] - referenceData[i+1]) + 
+                         Math.abs(data[i+2] - referenceData[i+2]);
             
-            if (diff > 80) { // Individual pixel change intensity threshold
+            if (diff > pixelDiffThreshold) { // Individual pixel change intensity threshold
               changedPixels++;
               debugData.data[i] = 255;   // Red for change
               debugData.data[i+1] = 0;
@@ -978,8 +1342,6 @@
             debugDisplay.style.borderColor = '#444';
             debugDisplay.style.boxShadow = 'none';
           }
-        }
-        prevFrameData = data;
       }
 
       const minimapContainer = document.getElementById('minimapContainer');
@@ -1030,8 +1392,17 @@
         x = Math.max(0, Math.min(1, x));
         y = Math.max(0, Math.min(1, y));
         
-        zoomFocusX = x;
-        zoomFocusY = y;
+        const zoom = parseFloat(document.getElementById("zoom")?.value || "1.0");
+        if (zoom > 1.0) {
+          // Map click position (0-1) to valid center range ( (1/2zoom) to (1 - 1/2zoom) )
+          // This ensures the viewport reaches edges exactly when the cursor reaches minimap edges.
+          const halfViewport = 0.5 / zoom;
+          zoomFocusX = halfViewport + (x * (1 - 2 * halfViewport));
+          zoomFocusY = halfViewport + (y * (1 - 2 * halfViewport));
+        } else {
+          zoomFocusX = 0.5;
+          zoomFocusY = 0.5;
+        }
         
         updateMinimapViewport();
 
@@ -1164,6 +1535,7 @@
         avDelay.addEventListener('input', () => {
           avDelayVal.textContent = `${avDelay.value}s`;
           videoDelayMs = Math.max(0, (parseFloat(avDelay.value) || 0) * 1000);
+          saveUISettings();
         });
         avDelayVal.textContent = `${avDelay.value}s`;
         videoDelayMs = Math.max(0, (parseFloat(avDelay.value) || 0) * 1000);
@@ -1279,6 +1651,104 @@
             ctx.putImageData(monoData, dx, dy);
           }
 
+          // Night Enhancement: Gamma Correction
+          if (nightGamma !== 1.0) {
+            const gammaData = ctx.getImageData(dx, dy, dw, dh);
+            const d = gammaData.data;
+            const exp = 1.0 / nightGamma;
+            // Pre-calculate table for performance
+            const gammaTable = new Uint8Array(256);
+            for (let i = 0; i < 256; i++) {
+              gammaTable[i] = Math.min(255, Math.pow(i / 255.0, exp) * 255);
+            }
+            for (let i = 0; i < d.length; i += 4) {
+              d[i] = gammaTable[d[i]];
+              d[i+1] = gammaTable[d[i+1]];
+              d[i+2] = gammaTable[d[i+2]];
+            }
+            ctx.putImageData(gammaData, dx, dy);
+          }
+
+          // Night Enhancement: False Color / Heatmap
+          if (isHeatmap) {
+            const heatmapData = ctx.getImageData(dx, dy, dw, dh);
+            const d = heatmapData.data;
+            for (let i = 0; i < d.length; i += 4) {
+              const avg = Math.floor((d[i] + d[i+1] + d[i+2]) / 3);
+              d[i]     = heatmapLUT[avg * 3];
+              d[i+1]   = heatmapLUT[avg * 3 + 1];
+              d[i+2]   = heatmapLUT[avg * 3 + 2];
+            }
+            ctx.putImageData(heatmapData, dx, dy);
+          }
+
+          // Night Enhancement: Local Contrast Enhancement (CLAHE Simulation)
+          // Simplified: Grid-based contrast stretching to bring out shadow details
+          if (nightClahe > 0) {
+            const claheData = ctx.getImageData(dx, dy, dw, dh);
+            const d = claheData.data;
+            const grid = 8;
+            const tileW = Math.floor(dw / grid);
+            const tileH = Math.floor(dh / grid);
+            
+            for (let gy = 0; gy < grid; gy++) {
+              for (let gx = 0; gx < grid; gx++) {
+                const tx = gx * tileW;
+                const ty = gy * tileH;
+                
+                // 1. Find local min/max
+                let min = 255, max = 0;
+                for (let y = 0; y < tileH; y += 2) {
+                  for (let x = 0; x < tileW; x += 2) {
+                    const idx = ((ty + y) * dw + (tx + x)) * 4;
+                    const luma = (d[idx] + d[idx+1] + d[idx+2]) / 3;
+                    if (luma < min) min = luma;
+                    if (luma > max) max = luma;
+                  }
+                }
+                
+                // 2. Apply local stretch
+                if (max > min + 10) {
+                  const range = max - min;
+                  for (let y = 0; y < tileH; y++) {
+                    for (let x = 0; x < tileW; x++) {
+                      const idx = ((ty + y) * dw + (tx + x)) * 4;
+                      for (let c = 0; c < 3; c++) {
+                        const val = d[idx+c];
+                        const stretched = ((val - min) / range) * 255;
+                        d[idx+c] = val + (stretched - val) * nightClahe;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            ctx.putImageData(claheData, dx, dy);
+          }
+
+          // Night Enhancement: Edge Sharpening (3x3 Convolution)
+          if (nightSharpen > 0) {
+            const sharpData = ctx.getImageData(dx, dy, dw, dh);
+            const src = new Uint8Array(sharpData.data);
+            const dst = sharpData.data;
+            const k = nightSharpen;
+            // Kernel: [0, -k, 0, -k, 1+4k, -k, 0, -k, 0]
+            for (let y = 1; y < dh - 1; y++) {
+              for (let x = 1; x < dw - 1; x++) {
+                const i = (y * dw + x) * 4;
+                for (let c = 0; c < 3; c++) {
+                  const val = src[i+c] * (1 + 4 * k) 
+                            - src[i+c - 4] * k           // Left
+                            - src[i+c + 4] * k           // Right
+                            - src[i+c - dw * 4] * k      // Top
+                            - src[i+c + dw * 4] * k;     // Bottom
+                  dst[i+c] = Math.min(255, Math.max(0, val));
+                }
+              }
+            }
+            ctx.putImageData(sharpData, dx, dy);
+          }
+
           // Memory Management: Close the previous frame's bitmap if it's not in the averaging buffer
           const prevDrawn = lastDrawn;
           lastDrawn = candidate.bmp;
@@ -1336,8 +1806,19 @@
               buffer = buffer.subarray(eoi);
               const blob = new Blob([frameBytes], {type: 'image/jpeg'});
               createImageBitmap(blob).then(bitmap => {
+                // Background motion detection processing:
+                // If page is hidden but motion is ON, we must process right here 
+                // because drawLoop (via requestAnimationFrame) will be suspended by the browser.
+                if (document.hidden && motionEnabled) {
+                  detectMotion(bitmap);
+                  // We still want to push to queue if we have room, so user can see what happened when they return
+                }
+                
                 frameQueue.push({ts: performance.now(), bmp: bitmap});
-                if (frameQueue.length > 180) frameQueue.shift();
+                if (frameQueue.length > 180) {
+                  const old = frameQueue.shift();
+                  if (old && old.bmp) old.bmp.close();
+                }
               }).catch(() => {});
             }
           }
@@ -1370,17 +1851,27 @@
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
-          if (!audioEl.muted) {
-            audioEl.muted = true;
-            audioEl.pause();
+          // If motion detection is ON, we must NOT stop the stream or audio
+          if (!motionEnabled) {
+            if (!audioEl.muted) {
+              audioEl.muted = true;
+              audioEl.pause();
+            }
+            if (audioEl.src) {
+              audioEl.removeAttribute('src');
+              audioEl.load();
+            }
+            stopMjpegStream();
           }
-          if (audioEl.src) {
-            audioEl.removeAttribute('src');
-            audioEl.load();
-          }
-          stopMjpegStream();
         } else {
-          startMjpegStream();
+          // Returning to page: reset motion detection reference frames to avoid "red flash"
+          // This ensures we compare the fresh frame with a new reference, not an old one
+          prevFrameData = null;
+          motionAccumulator = null;
+          
+          if (!mjpegRunning) {
+            startMjpegStream();
+          }
         }
       });
 
@@ -1409,6 +1900,18 @@
       }
 
       let lastFocusFetch = 0;
+      function updateZoom(val) {
+        const v = parseFloat(val);
+        document.getElementById("zoomVal").innerText = v + "x"; 
+        if (v <= 1.0) {
+          zoomFocusX = 0.5;
+          zoomFocusY = 0.5;
+          fetch("/?zoom_focus=0.500,0.500");
+        }
+        updateMinimapViewport(); 
+        fetch("/?zoom=" + v);
+      }
+
       function updateFocusDist(val) {
         document.getElementById('focusDistVal').textContent = val;
         const now = Date.now();
@@ -1470,11 +1973,37 @@
           viewMode = 'original';
         }
         applyCanvasSize(targetCanvasSize(lastDrawn));
+        saveUISettings();
       }
 
+      loadUISettings();
       updateCameraToggleBtn();
       updateNightSettings();
+      
+      // Set initial manual control visibility
+      if (initialFocusMode === 'manual') {
+        document.getElementById('manualFocusGroup').style.display = 'block';
+      }
+      if (initialExposureMode === 'manual') {
+        document.getElementById('manualExposureGroup').style.display = 'block';
+      }
+
+      // Initialize Binning button state
+      const binningBtn = document.getElementById('binningBtn');
+      if (binningBtn) {
+        if (isBinning) {
+          binningBtn.textContent = 'Disable Pixel Binning';
+          binningBtn.style.background = '#007AFF';
+          binningBtn.classList.add('active');
+        } else {
+          binningBtn.textContent = 'Enable Pixel Binning';
+          binningBtn.style.background = '#444';
+          binningBtn.classList.remove('active');
+        }
+      }
+      updateDashboard();
+      setInterval(updateDashboard, 5000);
       startMjpegStream();
     </script>
-  </body>
+</body>
 </html>
