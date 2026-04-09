@@ -528,6 +528,7 @@ class StreamingServerHelper(
                 val curISO = getPrefInt("camera_iso", 400)
                 val curShutter = getPrefLong("camera_shutter", 20000000L)
                 val curBinning = service?.let { prefs.getBoolean(it.getLensPrefKey("camera_pixel_binning"), false) } ?: false
+                val curPowerSaving = prefs.getBoolean("power_saving_mode", false)
                 val isoMin = prefs.getInt("camera_iso_min", 100)
                 val isoMax = prefs.getInt("camera_iso_max", 3200)
                 val shutterMin = prefs.getLong("camera_shutter_min", 100000L)
@@ -549,6 +550,10 @@ class StreamingServerHelper(
 
                 val htmlResponse = htmlTemplate
                     .replace("{{CUR_CAMERA}}", curCamera)
+                    .replace("{{POWERSAVING_LABEL}}", if (curPowerSaving) "Saving" else "Normal")
+                    .replace("{{POWERSAVING_COLOR}}", if (curPowerSaving) "#ff9500" else "#007AFF")
+                    .replace("{{PS_ACTIVE}}", if (curPowerSaving) "active" else "")
+                    .replace("{{POWERSAVING_BTN_LABEL}}", if (curPowerSaving) "Disable Power Saving" else "Enable Power Saving")
                     .replace("{{RES_LOW_SELECTED}}", if (curResolution == "low") "selected" else "")
                     .replace("{{RES_MEDIUM_SELECTED}}", if (curResolution == "medium") "selected" else "")
                     .replace("{{RES_HIGH_SELECTED}}", if (curResolution == "high") "selected" else "")

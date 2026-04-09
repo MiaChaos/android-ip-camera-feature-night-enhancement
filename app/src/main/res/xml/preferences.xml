@@ -33,6 +33,14 @@
             android:persistent="false" />
     </PreferenceCategory>
 
+    <PreferenceCategory android:title="Power Saving">
+        <SwitchPreferenceCompat
+            android:key="power_saving_mode"
+            android:title="Power Saving Mode"
+            android:summary="Force lowest quality and frame rate to save battery"
+            android:defaultValue="false" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="Camera Settings">
         <ListPreference
             android:key="camera_resolution"

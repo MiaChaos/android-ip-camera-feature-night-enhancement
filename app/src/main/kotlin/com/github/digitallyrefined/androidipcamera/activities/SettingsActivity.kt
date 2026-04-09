@@ -327,6 +327,17 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 }
             }
+
+            findPreference<Preference>("power_saving_mode")?.apply {
+                setOnPreferenceChangeListener { _, _ ->
+                    // Restart camera to apply power saving mode
+                    val intent = Intent("com.github.digitallyrefined.androidipcamera.RESTART_CAMERA").apply {
+                        setPackage(requireContext().packageName)
+                    }
+                    requireContext().sendBroadcast(intent)
+                    true
+                }
+            }
         }
 
         override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

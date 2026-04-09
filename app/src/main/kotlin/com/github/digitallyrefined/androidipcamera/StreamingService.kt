@@ -668,6 +668,7 @@ class StreamingService : LifecycleService() {
             "isCharging" to isCharging,
             "temp" to temp,
             "uptime" to (SystemClock.elapsedRealtime() / 1000), // seconds
+            "power_saving" to prefs.getBoolean("power_saving_mode", false),
             "minFocusDistance" to minFocusDistance,
             "isoMin" to isoMin,
             "isoMax" to isoMax,
@@ -728,11 +729,13 @@ class StreamingService : LifecycleService() {
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .apply {
-                    val quality = prefs.getString(getLensPrefKey("camera_resolution"), "low") ?: "low"
+                    val isPowerSaving = prefs.getBoolean("power_saving_mode", false)
+                    val quality = if (isPowerSaving) "240p" else (prefs.getString(getLensPrefKey("camera_resolution"), "low") ?: "low")
                     val targetResolution = cameraResolutionHelper?.getResolutionForQuality(quality)
 
                     if (targetResolution != null) {
                         Log.i(TAG, "Requesting resolution: $quality -> ${targetResolution.width}x${targetResolution.height}")
+                        if (isPowerSaving) Log.i(TAG, "Power Saving Mode active")
                         setResolutionSelector(
                             ResolutionSelector.Builder()
                                 .setResolutionStrategy(ResolutionStrategy(targetResolution, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER))
@@ -1075,6 +1078,13 @@ class StreamingService : LifecycleService() {
             "autofocus" -> {
                 launchMain { triggerAutoFocus() }
             }
+            "power_saving" -> {
+                val enabled = value == "1" || value == "on" || value == "true"
+                prefs.edit().putBoolean("power_saving_mode", enabled).apply()
+                launchMain { 
+                    startCamera() // Restart to apply changes
+                }
+            }
         }
     }
 
@@ -1083,7 +1093,8 @@ class StreamingService : LifecycleService() {
     private fun processImage(image: ImageProxy) {
         try {
             val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-            val delay = prefs.getString(getLensPrefKey("stream_delay"), "33")?.toLongOrNull() ?: 33L
+            val isPowerSaving = prefs.getBoolean("power_saving_mode", false)
+            val delay = if (isPowerSaving) 1000L else (prefs.getString(getLensPrefKey("stream_delay"), "33")?.toLongOrNull() ?: 33L)
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastFrameTime < delay) {
                 return
@@ -1095,7 +1106,7 @@ class StreamingService : LifecycleService() {
             val prefKey = if (isFront) "camera_manual_rotate_front" else "camera_manual_rotate_back"
             val manualRotation = prefs.getInt(prefKey, 0)
             val totalRotation = (autoRotation + manualRotation) % 360
-            val quality = prefs.getString(getLensPrefKey("camera_resolution"), "low") ?: "low"
+            val quality = if (isPowerSaving) "240p" else (prefs.getString(getLensPrefKey("camera_resolution"), "low") ?: "low")
             
             // Hard target widths for software downscaling to ensure user actually gets lower quality/bandwidth
             val targetWidth = when (quality) {

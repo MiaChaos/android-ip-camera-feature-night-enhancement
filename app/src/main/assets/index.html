@@ -328,6 +328,7 @@
       <h2 style='margin:0;font-size:18px;'>Android IP Camera</h2>
       
       <div class="dashboard">
+        <div class="dashboard-item" id="powerSavingItem">🔋 <span id="dashPowerSaving" class="dashboard-val" style="color: {{POWERSAVING_COLOR}}">{{POWERSAVING_LABEL}}</span></div>
         <div class="dashboard-item">🔋 <span id="dashBattery" class="dashboard-val">--%</span></div>
         <div class="dashboard-item">🌡️ <span id="dashTemp" class="dashboard-val">--°C</span></div>
         <div class="dashboard-item">📡 <span id="dashBitrate" class="dashboard-val">0 Mbps</span><span id="pressureDot" class="pressure-dot"></span></div>
@@ -377,8 +378,10 @@
 
           <button class='btn btn-action' onclick='fetch("/?rotate=90")'>Rotate 90&deg;</button>
 
+          <button id="psBtn" class='btn btn-action {{PS_ACTIVE}}' onclick='togglePowerSaving()'>🔋 {{POWERSAVING_BTN_LABEL}}</button>
+
           <div style="margin-bottom: 15px">
-            <button id="muteBtn" class="btn btn-action" style='width: 49%;'>🔇 Unmute Audio</button>
+            <button id="muteBtn" class="btn btn-action" style='width: 49%;'>🔇 Unmute</button>
             <button id="flashBtn" class="btn btn-action" style='width: 49%;'>💡 Flash On</button>
           </div>
 
@@ -964,6 +967,23 @@
         });
       }
 
+      function togglePowerSaving() {
+        const current = document.getElementById('dashPowerSaving').textContent === 'Saving';
+        fetch('/?power_saving=' + (current ? 'off' : 'on'));
+        // Optimistic UI update
+        const label = current ? 'Normal' : 'Saving';
+        const color = current ? '#007AFF' : '#ff9500';
+        const btnLabel = current ? 'Enable Power Saving' : 'Disable Power Saving';
+        
+        document.getElementById('dashPowerSaving').textContent = label;
+        document.getElementById('dashPowerSaving').style.color = color;
+        
+        const psBtn = document.getElementById('psBtn');
+        psBtn.textContent = '🔋 ' + btnLabel;
+        if (current) psBtn.classList.remove('active');
+        else psBtn.classList.add('active');
+      }
+
       function updateDashboard() {
         fetch('/status')
           .then(res => res.json())
@@ -973,6 +993,23 @@
             document.getElementById('dashBitrate').textContent = data.bitrate || '0 Mbps';
             document.getElementById('dashUptime').textContent = formatTime(data.uptime);
             
+            // Power Saving Status
+            const psVal = document.getElementById('dashPowerSaving');
+            const psBtn = document.getElementById('psBtn');
+            if (data.power_saving) {
+              psVal.textContent = 'Saving';
+              psVal.style.color = '#ff9500'; // Orange
+              psBtn.textContent = '🔋 Disable Power Saving';
+              psBtn.classList.add('active');
+              document.getElementById('powerSavingItem').title = 'Power Saving Mode is ON (240p, 1fps)';
+            } else {
+              psVal.textContent = 'Normal';
+              psVal.style.color = '#007AFF'; // Blue
+              psBtn.textContent = '🔋 Enable Power Saving';
+              psBtn.classList.remove('active');
+              document.getElementById('powerSavingItem').title = 'Power Saving Mode is OFF';
+            }
+
             // Network Pressure Indicator
             const pressureDot = document.getElementById('pressureDot');
             if (pressureDot && data.pressure !== undefined) {
@@ -1450,8 +1487,8 @@
 
       function updateMuteButton() {
         muteBtn.textContent = audioEl.muted
-          ? '🔇 Unmute Audio'
-          : '🔊 Mute Audio';
+          ? '🔇 Unmute'
+          : '🔊 Mute';
 
         avDelayContainer.style.display = audioEl.muted
           ? 'none'
