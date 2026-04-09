@@ -324,11 +324,11 @@
     </style>
   </head>
   <body>
-    <div class='header'>
-      <h2 style='margin:0;font-size:18px;'>Android IP Camera</h2>
+    <div class="header">
+      <h2 style="margin:0;font-size:18px;">Android IP Camera</h2>
       
       <div class="dashboard">
-        <div class="dashboard-item" id="powerSavingItem">🔋 <span id="dashPowerSaving" class="dashboard-val" style="color: {{POWERSAVING_COLOR}}">{{POWERSAVING_LABEL}}</span></div>
+        <div class="dashboard-item" id="powerSavingItem">⚡ <span id="dashPowerSaving" class="dashboard-val">{{POWERSAVING_LABEL}}</span></div>
         <div class="dashboard-item">🔋 <span id="dashBattery" class="dashboard-val">--%</span></div>
         <div class="dashboard-item">🌡️ <span id="dashTemp" class="dashboard-val">--°C</span></div>
         <div class="dashboard-item">📡 <span id="dashBitrate" class="dashboard-val">0 Mbps</span><span id="pressureDot" class="pressure-dot"></span></div>
@@ -336,8 +336,9 @@
       </div>
 
       <div>
-        <button id='fitBtn' class='btn active' onclick='setView("fit")'>Fit Screen</button>
-        <button id='origBtn' class='btn' onclick='setView("original")'>Original Size</button>
+        <button id="fitBtn" class="btn active" onclick='setView("fit")'>Fit Screen</button>
+        <button id="origBtn" class="btn" onclick='setView("original")'>Original Size</button>
+        <div id="viewModeDesc" style="font-size: 11px; margin-top: 8px; color: #34c759; transition: all 0.3s;">Mode: Adaptive display (Resolution only affects clarity)</div>
       </div>
     </div>
 
@@ -380,6 +381,8 @@
 
           <button id="psBtn" class='btn btn-action {{PS_ACTIVE}}' onclick='togglePowerSaving()'>🔋 {{POWERSAVING_BTN_LABEL}}</button>
 
+          <button id="previewBtn" class="btn btn-action {{PREVIEW_ACTIVE}}" onclick='fetch("/?preview=toggle")'>📱 {{PREVIEW_BTN_LABEL}}</button>
+
           <div style="margin-bottom: 15px">
             <button id="muteBtn" class="btn btn-action" style='width: 49%;'>🔇 Unmute</button>
             <button id="flashBtn" class="btn btn-action" style='width: 49%;'>💡 Flash On</button>
@@ -415,11 +418,11 @@
             <option value='high' {{RES_HIGH_SELECTED}}>Auto: High</option>
           </select>
 
-          <label for="zoom">Zoom <span class='val-badge' id='zoomVal'>{{CUR_ZOOM}}x</span></label>
-          <input id="zoom" type='range' min='1' max='8' step='0.1' value='{{CUR_ZOOM}}' oninput='updateZoom(this.value)'>
+          <label for="zoom">Hardware Zoom <span class='val-badge' id='zoomVal'>{{CUR_ZOOM}}x</span></label>
+          <input id="zoom" type='range' min='0' max='100' step='1' oninput='updateZoom(this.value)'>
 
-          <label for="scale">Scale <span class='val-badge' id='scaleVal'>{{CUR_SCALE}}x</span></label>
-          <input id="scale" type='range' min='0.5' max='2.0' step='0.1' value='{{CUR_SCALE}}' oninput='setView("original"); document.getElementById("scaleVal").innerText=this.value+"x";fetch("/?scale="+this.value)'>
+          <label for="softwareZoom">Software Crop (Virtual PTZ) <span class='val-badge' id='softwareZoomVal'>{{CUR_SOFTWARE_ZOOM}}x</span></label>
+          <input id="softwareZoom" type='range' min='0' max='100' step='1' oninput='updateSoftwareZoom(this.value)'>
 
           <label for="exposure">Exposure <span class='val-badge' id='exposureVal'>{{CUR_EXPOSURE}}</span></label>
           <input id="exposure" type='range' min='-10' max='10' step='1' value='{{CUR_EXPOSURE}}' oninput='document.getElementById("exposureVal").innerText=this.value;fetch("/?exposure="+this.value)'>
@@ -620,6 +623,23 @@
       let isDraggingMinimap = false;
       let lastMinimapFetch = 0;
       let nightVisionEnabled = false;
+
+      const fetchThrottle = {};
+      function throttledFetch(url, key, delay = 100) {
+        if (fetchThrottle[key]) {
+          fetchThrottle[key].nextUrl = url;
+          return;
+        }
+        fetchThrottle[key] = { lastRun: Date.now() };
+        fetch(url).finally(() => {
+          setTimeout(() => {
+            if (!fetchThrottle[key]) return;
+            const next = fetchThrottle[key].nextUrl;
+            delete fetchThrottle[key];
+            if (next) throttledFetch(next, key, delay);
+          }, delay);
+        });
+      }
       let nightAvgFrames = 1;
       let nightGain = 0;
       let nightGamma = 1.0;
@@ -631,9 +651,27 @@
       let frameBuffer = [];
       let wakeLock = null;
 
+      function valToZoom(val) {
+        // Map 0-100 to logarithmic 1x-8x
+        return Math.pow(8, val / 100);
+      }
+      function zoomToVal(zoom) {
+        // Map 1x-8x back to 0-100
+        return Math.log(Math.max(1, zoom)) / Math.log(8) * 100;
+      }
+
       // Initial state from server templates
       const initialFocusMode = '{{CUR_FOCUS_MODE}}';
       const initialExposureMode = '{{CUR_EXPOSURE_MODE}}';
+
+      // Initialize zoom sliders to mapped values
+      window.addEventListener('DOMContentLoaded', () => {
+        const hZoom = document.getElementById('zoom');
+        if (hZoom) hZoom.value = zoomToVal(parseFloat('{{CUR_ZOOM}}') || 1.0);
+        const sZoom = document.getElementById('softwareZoom');
+        if (sZoom) sZoom.value = zoomToVal(parseFloat('{{CUR_SOFTWARE_ZOOM}}') || 1.0);
+        updateMinimapViewport();
+      });
 
       // Pre-calculated Heatmap Lookup Table (LUT)
       const heatmapLUT = new Uint8Array(256 * 3);
@@ -1010,6 +1048,16 @@
               document.getElementById('powerSavingItem').title = 'Power Saving Mode is OFF';
             }
 
+            // Phone Preview Status
+            const previewBtn = document.getElementById('previewBtn');
+            if (data.preview_hidden) {
+              previewBtn.textContent = '📱 Show Phone Preview';
+              previewBtn.classList.add('active');
+            } else {
+              previewBtn.textContent = '📱 Hide Phone Preview';
+              previewBtn.classList.remove('active');
+            }
+
             // Network Pressure Indicator
             const pressureDot = document.getElementById('pressureDot');
             if (pressureDot && data.pressure !== undefined) {
@@ -1077,6 +1125,25 @@
               const shutter = document.getElementById('shutterSlider');
               if (shutter && document.activeElement !== shutter) shutter.value = data.curShutter;
               updateExposureLabel();
+            }
+
+            // Sync Zooms
+            if (data.curZoom !== undefined) {
+              const zoom = document.getElementById('zoom');
+              if (zoom && document.activeElement !== zoom) {
+                const z = parseFloat(data.curZoom);
+                zoom.value = zoomToVal(z);
+                document.getElementById('zoomVal').innerText = z.toFixed(1) + 'x';
+              }
+            }
+            if (data.curSoftwareZoom !== undefined) {
+              const sZoom = document.getElementById('softwareZoom');
+              if (sZoom && document.activeElement !== sZoom) {
+                const z = parseFloat(data.curSoftwareZoom);
+                sZoom.value = zoomToVal(z);
+                document.getElementById('softwareZoomVal').innerText = z.toFixed(1) + 'x';
+                updateMinimapViewport();
+              }
             }
             if (data.curFocusDistance !== undefined) {
               const focus = document.getElementById('focusDist');
@@ -1393,7 +1460,8 @@
           minimapContainer.style.height = (160 * aspectRatio) + 'px';
         }
 
-        const zoom = parseFloat(document.getElementById('zoom')?.value || '1.0');
+        const sliderVal = document.getElementById('softwareZoom')?.value || '0';
+        const zoom = valToZoom(parseFloat(sliderVal));
         const widthPercent = 100 / zoom;
         const heightPercent = 100 / zoom;
         
@@ -1429,7 +1497,8 @@
         x = Math.max(0, Math.min(1, x));
         y = Math.max(0, Math.min(1, y));
         
-        const zoom = parseFloat(document.getElementById("zoom")?.value || "1.0");
+        const sliderVal = document.getElementById("softwareZoom")?.value || "0";
+        const zoom = valToZoom(parseFloat(sliderVal));
         if (zoom > 1.0) {
           // Map click position (0-1) to valid center range ( (1/2zoom) to (1 - 1/2zoom) )
           // This ensures the viewport reaches edges exactly when the cursor reaches minimap edges.
@@ -1463,13 +1532,16 @@
 
       function targetCanvasSize(frame) {
         if (viewMode === 'fit') {
-          const w = (streamContainer && streamContainer.clientWidth)
-            ? streamContainer.clientWidth
-            : (frame ? frame.width : (lastDrawn ? lastDrawn.width : streamCanvas.width));
-          const h = (streamContainer && streamContainer.clientHeight)
-            ? streamContainer.clientHeight
-            : (frame ? frame.height : (lastDrawn ? lastDrawn.height : streamCanvas.height));
-          return { w, h };
+          const containerW = streamContainer ? streamContainer.clientWidth : window.innerWidth;
+          const containerH = streamContainer ? streamContainer.clientHeight : window.innerHeight;
+          const frameW = frame ? frame.width : (lastDrawn ? lastDrawn.width : 640);
+          const frameH = frame ? frame.height : (lastDrawn ? lastDrawn.height : 480);
+          
+          const scale = Math.min(containerW / frameW, containerH / frameH);
+          return {
+            w: Math.floor(frameW * scale),
+            h: Math.floor(frameH * scale)
+          };
         } else {
           const w = frame ? frame.width : (lastDrawn ? lastDrawn.width : streamCanvas.width);
           const h = frame ? frame.height : (lastDrawn ? lastDrawn.height : streamCanvas.height);
@@ -1579,8 +1651,9 @@
       }
 
       streamCanvas.addEventListener('click', (e) => {
-        const zoom = parseFloat(document.getElementById('zoom')?.value || '1.0');
-        if (zoom <= 1.0) return; // Disable click-to-focus at 1x zoom to avoid confusion
+        const sliderVal = document.getElementById('softwareZoom')?.value || '0';
+        const softwareZoom = valToZoom(parseFloat(sliderVal));
+        if (softwareZoom <= 1.0) return; // Disable click-to-focus at 1x zoom to avoid confusion
 
         const rect = streamCanvas.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
@@ -1588,17 +1661,17 @@
         
         // When zoomed in, x/y on the canvas are relative to the current viewport.
         // We need to calculate the absolute position in the full image.
-        zoomFocusX = (zoomFocusX - 0.5/zoom) + (x / zoom);
-        zoomFocusY = (zoomFocusY - 0.5/zoom) + (y / zoom);
+        zoomFocusX = (zoomFocusX - 0.5/softwareZoom) + (x / softwareZoom);
+        zoomFocusY = (zoomFocusY - 0.5/softwareZoom) + (y / softwareZoom);
         
         // Clamp to stay within full image bounds while keeping viewport inside
-        const halfW = 0.5 / zoom;
-        const halfH = 0.5 / zoom;
+        const halfW = 0.5 / softwareZoom;
+        const halfH = 0.5 / softwareZoom;
         zoomFocusX = Math.max(halfW, Math.min(1.0 - halfW, zoomFocusX));
         zoomFocusY = Math.max(halfH, Math.min(1.0 - halfH, zoomFocusY));
 
         updateMinimapViewport();
-        fetch('/?zoom_focus=' + zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
+        throttledFetch('/?zoom_focus=' + zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3), 'zoom_focus', 100);
       });
 
       function drawLoop() {
@@ -1938,15 +2011,22 @@
 
       let lastFocusFetch = 0;
       function updateZoom(val) {
-        const v = parseFloat(val);
-        document.getElementById("zoomVal").innerText = v + "x"; 
+        const v = valToZoom(val);
+        document.getElementById("zoomVal").innerText = v.toFixed(1) + "x"; 
+        throttledFetch("/?zoom=" + v.toFixed(3), 'zoom', 150);
+      }
+
+      function updateSoftwareZoom(val) {
+        const v = valToZoom(val);
+        document.getElementById("softwareZoomVal").innerText = v.toFixed(1) + "x"; 
+        
         if (v <= 1.0) {
           zoomFocusX = 0.5;
           zoomFocusY = 0.5;
-          fetch("/?zoom_focus=0.500,0.500");
+          throttledFetch("/?zoom_focus=0.500,0.500", 'zoom_focus', 100);
         }
         updateMinimapViewport(); 
-        fetch("/?zoom=" + v);
+        throttledFetch("/?software_zoom=" + v.toFixed(3), 'software_zoom', 100);
       }
 
       function updateFocusDist(val) {
@@ -2000,14 +2080,23 @@
       function setView(mode) {
         const f = document.getElementById('fitBtn');
         const o = document.getElementById('origBtn');
+        const desc = document.getElementById('viewModeDesc');
         if (mode === 'fit') {
           f.className = 'btn active';
           o.className = 'btn';
           viewMode = 'fit';
+          if (desc) {
+            desc.textContent = 'Mode: Adaptive display (Resolution only affects clarity)';
+            desc.style.color = '#34c759'; // Green
+          }
         } else {
           f.className = 'btn';
           o.className = 'btn active';
           viewMode = 'original';
+          if (desc) {
+            desc.textContent = 'Mode: 1:1 Pixel Mapping (Resolution affects display size)';
+            desc.style.color = '#ff9500'; // Orange
+          }
         }
         applyCanvasSize(targetCanvasSize(lastDrawn));
         saveUISettings();
@@ -2041,6 +2130,12 @@
       updateDashboard();
       setInterval(updateDashboard, 5000);
       startMjpegStream();
+
+      window.addEventListener('resize', () => {
+        if (viewMode === 'fit') {
+          applyCanvasSize(targetCanvasSize(lastDrawn));
+        }
+      });
     </script>
 </body>
 </html>

@@ -60,6 +60,15 @@ class MainActivity : AppCompatActivity() {
             streamingService?.onLog = { message ->
                 Log.i(TAG, "Service: $message")
             }
+            streamingService?.onTogglePreview = { hide ->
+                runOnUiThread {
+                    if (hide != userHiddenPreview) {
+                        hideShowPreview()
+                    }
+                }
+            }
+            // Sync initial state
+            streamingService?.isPreviewHidden = userHiddenPreview
 
             // Initialize Server
             streamingService?.startStreamingServer()
@@ -296,6 +305,7 @@ class MainActivity : AppCompatActivity() {
             exitButton.visibility = View.GONE
             rootView.setBackgroundColor(android.graphics.Color.BLACK)
             userHiddenPreview = true
+            streamingService?.isPreviewHidden = true
             backGestureCallback.isEnabled = true
 
             if (isBound) {
@@ -320,6 +330,7 @@ class MainActivity : AppCompatActivity() {
             rootView.setBackgroundColor(if (hasClients) android.graphics.Color.TRANSPARENT else android.graphics.Color.BLACK)
 
             userHiddenPreview = false
+            streamingService?.isPreviewHidden = false
             backGestureCallback.isEnabled = false
 
             if (isBound && hasClients) {

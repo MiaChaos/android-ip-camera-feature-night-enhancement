@@ -35,6 +35,7 @@ A simple motion detection mode that compares the current frame with one from a f
 
 - **4K Support**: Works better with high-resolution streams.
 - **Network Indicator**: A simple indicator to show how much bandwidth you're using.
+- **Zoom Optimization**: Now uses logarithmic sliders for smoother control. Added separate Hardware Zoom and Software Crop (Virtual PTZ) controls.
 - **Zoom Minimap**: A small map to help you see where you're looking when zoomed in.Had some bug but lazy to fix.
 - **Snapshot Gallery**: A place to view and manage photos you've taken remotely.
 

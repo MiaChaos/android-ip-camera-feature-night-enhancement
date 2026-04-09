@@ -96,6 +96,8 @@ class StreamingService : LifecycleService() {
     var onClientDisconnected: (() -> Unit)? = null
     var onLog: ((String) -> Unit)? = null
     var onCameraRestartNeeded: (() -> Unit)? = null
+    var onTogglePreview: ((Boolean) -> Unit)? = null
+    var isPreviewHidden: Boolean = false
 
     // Preview surface provider
     private var currentSurfaceProvider: Preview.SurfaceProvider? = null
@@ -190,12 +192,12 @@ class StreamingService : LifecycleService() {
         detectBackLenses()
     }
 
-    fun triggerAutoFocus() {
+    fun triggerAutoFocus(x: Float = 0.5f, y: Float = 0.5f) {
         val cam = camera ?: return
         lifecycleScope.launch(Dispatchers.Main) {
             try {
                 val factory = SurfaceOrientedMeteringPointFactory(1f, 1f)
-                val point = factory.createPoint(0.5f, 0.5f)
+                val point = factory.createPoint(x, y)
                 
                 // 1. Temporarily clear manual overrides to allow AF/AE to work
                 val camera2Control = Camera2CameraControl.from(cam.cameraControl)
@@ -205,18 +207,18 @@ class StreamingService : LifecycleService() {
                     .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
                 
-                Log.i(TAG, "Force Auto Focus: Triggering AF/AE...")
+                Log.i(TAG, "Force Auto Focus at ($x, $y): Triggering AF/AE...")
                 val result = cam.cameraControl.startFocusAndMetering(action)
                 
                 // 2. Once the action is triggered (or after a short delay), restore manual settings
                 // We use a listener to ensure we don't fight with the metering action immediately
                 result.addListener({
-                    Log.i(TAG, "Force Auto Focus: Action completed, restoring manual settings")
+                    Log.i(TAG, "Force Auto Focus at ($x, $y): Action completed, restoring manual settings")
                     applyCamera2InteropSettings()
                 }, ContextCompat.getMainExecutor(this@StreamingService))
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to trigger auto focus: ${e.message}")
+                Log.e(TAG, "Failed to trigger auto focus at ($x, $y): ${e.message}")
                 applyCamera2InteropSettings() // Attempt to restore even on error
             }
         }
@@ -669,6 +671,7 @@ class StreamingService : LifecycleService() {
             "temp" to temp,
             "uptime" to (SystemClock.elapsedRealtime() / 1000), // seconds
             "power_saving" to prefs.getBoolean("power_saving_mode", false),
+            "preview_hidden" to isPreviewHidden,
             "minFocusDistance" to minFocusDistance,
             "isoMin" to isoMin,
             "isoMax" to isoMax,
@@ -680,7 +683,9 @@ class StreamingService : LifecycleService() {
             "curFocusDistance" to curFocusDistance,
             "curFocusMode" to curFocusMode,
             "curExposureMode" to curExposureMode,
-            "curBinning" to curBinning
+            "curBinning" to curBinning,
+            "curZoom" to (prefs.getString(getLensPrefKey("camera_zoom"), "1.0") ?: "1.0"),
+            "curSoftwareZoom" to (prefs.getString(getLensPrefKey("software_zoom"), "1.0") ?: "1.0")
         )
     }
 
@@ -989,6 +994,10 @@ class StreamingService : LifecycleService() {
                 prefs.edit().putString(getLensPrefKey("camera_zoom"), zoomFactor.toString()).apply()
                 launchMain { cam?.cameraControl?.setZoomRatio(zoomFactor) }
             }
+            "software_zoom" -> {
+                val softwareZoom = value.toFloatOrNull() ?: return
+                prefs.edit().putString(getLensPrefKey("software_zoom"), softwareZoom.toString()).apply()
+            }
             "exposure" -> {
                 val exposure = value.toIntOrNull() ?: return
                 prefs.edit().putString(getLensPrefKey("camera_exposure"), exposure.toString()).apply()
@@ -1041,6 +1050,8 @@ class StreamingService : LifecycleService() {
                         .putFloat(getLensPrefKey("camera_zoom_focus_x"), x)
                         .putFloat(getLensPrefKey("camera_zoom_focus_y"), y)
                         .apply()
+                    // Trigger auto-focus at the new zoom focus point
+                    launchMain { triggerAutoFocus(x, y) }
                 }
             }
             "focus_mode" -> {
@@ -1076,13 +1087,31 @@ class StreamingService : LifecycleService() {
                 Log.i(TAG, "Pixel Binning: ${if (enabled) "Enabled" else "Disabled"}")
             }
             "autofocus" -> {
-                launchMain { triggerAutoFocus() }
+                val parts = value.split(",")
+                if (parts.size == 2) {
+                    val x = parts[0].toFloatOrNull() ?: 0.5f
+                    val y = parts[1].toFloatOrNull() ?: 0.5f
+                    launchMain { triggerAutoFocus(x, y) }
+                } else {
+                    launchMain { triggerAutoFocus() }
+                }
             }
             "power_saving" -> {
                 val enabled = value == "1" || value == "on" || value == "true"
                 prefs.edit().putBoolean("power_saving_mode", enabled).apply()
                 launchMain { 
                     startCamera() // Restart to apply changes
+                }
+            }
+            "preview" -> {
+                val hide = when (value.lowercase()) {
+                    "hide", "off", "0" -> true
+                    "show", "on", "1" -> false
+                    "toggle" -> !isPreviewHidden
+                    else -> return
+                }
+                launchMain {
+                    onTogglePreview?.invoke(hide)
                 }
             }
         }
@@ -1118,8 +1147,7 @@ class StreamingService : LifecycleService() {
                 else -> 640
             }
 
-            val scaleFactor = prefs.getString(getLensPrefKey("stream_scale"), "1.0")?.toFloatOrNull() ?: 1.0f
-            val zoomFactor = prefs.getString(getLensPrefKey("camera_zoom"), "1.0")?.toFloatOrNull() ?: 1.0f
+            val softwareZoom = prefs.getString(getLensPrefKey("software_zoom"), "1.0")?.toFloatOrNull() ?: 1.0f
             // Use lens-specific cached values or preference
             val zoomFocusX = prefs.getFloat(getLensPrefKey("camera_zoom_focus_x"), 0.5f)
             val zoomFocusY = prefs.getFloat(getLensPrefKey("camera_zoom_focus_y"), 0.5f)
@@ -1151,104 +1179,108 @@ class StreamingService : LifecycleService() {
                 Log.d(TAG, "Processing frame: ${width}x${height}, Binning: $isBinningEnabled")
             }
 
-            // Convert NV21 to JPEG - USE FINAL DIMENSIONS
+            // Convert NV21 to JPEG for snapshot and as a base for transformation
             var jpegBytes = convertNV21toJPEG(nv21, width, height)
-            
-            // Store as latest snapshot
             lastSnapshot = jpegBytes
 
             // Apply transformations if needed (Rotation, Scaling, Zoom, Contrast)
-            if (totalRotation != 0 || scaleFactor != 1.0f || zoomFactor != 1.0f || contrastValue != 0 || width > targetWidth) {
+            // We optimize by calculating target dimensions first to avoid redundant scaling
+            val needsTransform = totalRotation != 0 || softwareZoom > 1.0f || contrastValue != 0 || width > targetWidth
+            
+            if (needsTransform) {
                 try {
-                    var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+                    // Use inSampleSize to decode a smaller version if the source is massive
+                    // This prevents OOM on high-res sensors (Main lens)
+                    val options = BitmapFactory.Options().apply {
+                        if (width > targetWidth * 2) {
+                            inSampleSize = 2
+                            if (width > targetWidth * 4) inSampleSize = 4
+                        }
+                    }
+                    
+                    var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, options)
                     if (bitmap != null) {
-                        val srcWidth = bitmap.width
-                        val srcHeight = bitmap.height
+                        val matrix = Matrix()
                         
-                        val finalMatrix = Matrix()
+                        // 1. Handle Rotation
                         if (totalRotation != 0) {
-                            finalMatrix.postRotate(totalRotation.toFloat())
+                            matrix.postRotate(totalRotation.toFloat())
                         }
                         
-                        var workingBitmap = bitmap
-                        if (totalRotation != 0) {
-                            workingBitmap = Bitmap.createBitmap(bitmap, 0, 0, srcWidth, srcHeight, finalMatrix, true)
-                            if (workingBitmap != bitmap) bitmap.recycle()
+                        // 2. Handle Software Zoom (Virtual PTZ)
+                        // We calculate the crop region in the coordinate system AFTER rotation
+                        // because that's what the user sees and what zoomFocusX/Y refers to.
+                        var softwareZoomX = 0f
+                        var softwareZoomY = 0f
+                        if (softwareZoom > 1.0f) {
+                            // Temporary matrix to find rotated dimensions
+                            val tempMatrix = Matrix().apply { postRotate(totalRotation.toFloat()) }
+                            val rotatedRect = android.graphics.RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
+                            tempMatrix.mapRect(rotatedRect)
+                            
+                            val w = rotatedRect.width()
+                            val h = rotatedRect.height()
+                            
+                            val cropW = w / softwareZoom
+                            val cropH = h / softwareZoom
+                            
+                            softwareZoomX = Math.max(0f, Math.min(w - cropW, (zoomFocusX * w) - (cropW / 2f)))
+                            softwareZoomY = Math.max(0f, Math.min(h - cropH, (zoomFocusY * h) - (cropH / 2f)))
+                            
+                            // Apply crop via matrix (reverse translation)
+                            matrix.postTranslate(-softwareZoomX, -softwareZoomY)
                         }
                         
-                        if (zoomFactor > 1.0f) {
-                            val w = workingBitmap.width
-                            val h = workingBitmap.height
-                            
-                            val cropW = w / zoomFactor
-                            val cropH = h / zoomFactor
-                            
-                            var startX = (zoomFocusX * w) - (cropW / 2f)
-                            var startY = (zoomFocusY * h) - (cropH / 2f)
-                            
-                            if (startX < 0) startX = 0f
-                            if (startY < 0) startY = 0f
-                            if (startX + cropW > w) startX = w - cropW
-                            if (startY + cropH > h) startY = h - cropH
-                            
-                            val zoomedBitmap = Bitmap.createBitmap(
-                                workingBitmap, startX.toInt(), startY.toInt(), cropW.toInt(), cropH.toInt()
-                            )
-                            if (zoomedBitmap != workingBitmap) workingBitmap.recycle()
-                            workingBitmap = zoomedBitmap
+                        // 3. Handle Downscaling
+                        // We want the final output width to match targetWidth
+                        // The softwareZoom effectively multiplies our scale, so we combine them
+                        val currentWidthAfterRotation = if (totalRotation % 180 != 0) bitmap.height.toFloat() else bitmap.width.toFloat()
+                        
+                        val autoScale = if (currentWidthAfterRotation > targetWidth) {
+                            targetWidth.toFloat() / currentWidthAfterRotation
+                        } else 1.0f
+                        
+                        // Combine all scale factors into ONE matrix operation
+                        // softwareZoom (to zoom in) * autoScale (to fit resolution)
+                        val combinedScale = softwareZoom * autoScale
+                        if (combinedScale != 1.0f) {
+                            matrix.postScale(combinedScale, combinedScale)
                         }
                         
-                        // Combined scaling: resolution target * user scale factor
-                        val autoScale = if (workingBitmap.width > targetWidth) targetWidth.toFloat() / workingBitmap.width else 1.0f
-                        val finalScale = autoScale * scaleFactor
+                        // Execute all transformations in ONE step
+                        val transformedWidth = (currentWidthAfterRotation * autoScale).toInt().coerceAtLeast(1)
+                        val transformedHeight = (if (totalRotation % 180 != 0) bitmap.width.toFloat() else bitmap.height.toFloat() * autoScale).toInt().coerceAtLeast(1)
                         
-                        if (finalScale != 1.0f) {
-                            val scaledW = (workingBitmap.width * finalScale).toInt()
-                            val scaledH = (workingBitmap.height * finalScale).toInt()
-                            if (scaledW > 0 && scaledH > 0) {
-                                val scaledBitmap = Bitmap.createScaledBitmap(workingBitmap, scaledW, scaledH, true)
-                                if (scaledBitmap != workingBitmap) workingBitmap.recycle()
-                                workingBitmap = scaledBitmap
-                            }
-                        }
+                        var workingBitmap = Bitmap.createBitmap(transformedWidth, transformedHeight, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(workingBitmap)
                         
-                        bitmap = workingBitmap
-                        
-                        if (contrastValue != 0) {
+                        // If we have contrast adjustments, use a Paint
+                        val paint = if (contrastValue != 0) {
                             val contrastFactor = 1.0f + (contrastValue / 100.0f)
-                            val contrastColorMatrix = android.graphics.ColorMatrix().apply {
-                                set(floatArrayOf(
-                                contrastFactor, 0f, 0f, 0f, 0f,
-                                0f, contrastFactor, 0f, 0f, 0f,
-                                0f, 0f, contrastFactor, 0f, 0f,
-                                0f, 0f, 0f, 1f, 0f
-                                ))
+                            android.graphics.Paint().apply {
+                                colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply {
+                                    set(floatArrayOf(
+                                        contrastFactor, 0f, 0f, 0f, 0f,
+                                        0f, contrastFactor, 0f, 0f, 0f,
+                                        0f, 0f, contrastFactor, 0f, 0f,
+                                        0f, 0f, 0f, 1f, 0f
+                                    ))
+                                })
                             }
-                            val paint = android.graphics.Paint().apply {
-                                colorFilter = android.graphics.ColorMatrixColorFilter(contrastColorMatrix)
-                            }
-                            val contrastedBitmap = Bitmap.createBitmap(
-                                bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888
-                            )
-                            val canvas = android.graphics.Canvas(contrastedBitmap)
-                            canvas.drawBitmap(bitmap, 0f, 0f, paint)
-                            bitmap.recycle()
-                            bitmap = contrastedBitmap
-                        }
-
-                        val outputStream = java.io.ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-                        jpegBytes = outputStream.toByteArray()
+                        } else null
                         
-                        // Store the processed JPEG as latest snapshot
-                        lastSnapshot = jpegBytes
-                        Log.d(TAG, "Snapshot updated (processed): ${jpegBytes.size} bytes")
-                        
+                        canvas.drawBitmap(bitmap, matrix, paint)
                         bitmap.recycle()
+                        
+                        val outputStream = java.io.ByteArrayOutputStream()
+                        workingBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+                        jpegBytes = outputStream.toByteArray()
+                        workingBitmap.recycle()
                         outputStream.close()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error transforming image: ${e.message}")
+                    // On error, jpegBytes remains the original JPEG, which is safe but might be large
                 }
             }
 
