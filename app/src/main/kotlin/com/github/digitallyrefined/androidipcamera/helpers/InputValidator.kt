@@ -15,13 +15,9 @@ object InputValidator {
                username.matches(Regex("^[a-zA-Z0-9_-]+$"))
     }
 
-    // Password validation
     fun isValidPassword(password: String): Boolean {
-        return password.length >= 8 &&
-               password.length <= 128 &&
-               password.contains(Regex("[A-Z]")) && // At least one uppercase
-               password.contains(Regex("[a-z]")) && // At least one lowercase
-               password.contains(Regex("[0-9]"))    // At least one digit
+        return password.length >= 6 &&
+               password.length <= 128
     }
 
     // Certificate path validation - STRENGTHENED for security

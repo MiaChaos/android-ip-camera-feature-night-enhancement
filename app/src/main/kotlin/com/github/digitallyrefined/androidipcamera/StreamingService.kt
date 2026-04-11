@@ -96,8 +96,6 @@ class StreamingService : LifecycleService() {
     var onClientDisconnected: (() -> Unit)? = null
     var onLog: ((String) -> Unit)? = null
     var onCameraRestartNeeded: (() -> Unit)? = null
-    var onTogglePreview: ((Boolean) -> Unit)? = null
-    var isPreviewHidden: Boolean = false
 
     // Preview surface provider
     private var currentSurfaceProvider: Preview.SurfaceProvider? = null
@@ -671,7 +669,6 @@ class StreamingService : LifecycleService() {
             "temp" to temp,
             "uptime" to (SystemClock.elapsedRealtime() / 1000), // seconds
             "power_saving" to prefs.getBoolean("power_saving_mode", false),
-            "preview_hidden" to isPreviewHidden,
             "minFocusDistance" to minFocusDistance,
             "isoMin" to isoMin,
             "isoMax" to isoMax,
@@ -1103,17 +1100,6 @@ class StreamingService : LifecycleService() {
                     startCamera() // Restart to apply changes
                 }
             }
-            "preview" -> {
-                val hide = when (value.lowercase()) {
-                    "hide", "off", "0" -> true
-                    "show", "on", "1" -> false
-                    "toggle" -> !isPreviewHidden
-                    else -> return
-                }
-                launchMain {
-                    onTogglePreview?.invoke(hide)
-                }
-            }
         }
     }
 
@@ -1163,7 +1149,7 @@ class StreamingService : LifecycleService() {
             
             // Software Pixel Binning (2x2) - Process at raw NV21 level for maximum SNR gain
             val isBinningEnabled = prefs.getBoolean(getLensPrefKey("camera_pixel_binning"), false)
-            if (isBinningEnabled && width >= 640 && height >= 480) {
+            if (isBinningEnabled && width >= 640 && height >= 480 && width % 4 == 0 && height % 4 == 0) {
                 try {
                     val binned = performSoftwareBinning(nv21, width, height)
                     nv21 = binned.first
@@ -1181,106 +1167,92 @@ class StreamingService : LifecycleService() {
 
             // Convert NV21 to JPEG for snapshot and as a base for transformation
             var jpegBytes = convertNV21toJPEG(nv21, width, height)
+            if (jpegBytes.isEmpty()) {
+                return
+            }
             lastSnapshot = jpegBytes
 
             // Apply transformations if needed (Rotation, Scaling, Zoom, Contrast)
-            // We optimize by calculating target dimensions first to avoid redundant scaling
-            val needsTransform = totalRotation != 0 || softwareZoom > 1.0f || contrastValue != 0 || width > targetWidth
-            
+            val uiScale = prefs.getString(getLensPrefKey("stream_scale"), "1.0")?.toFloatOrNull() ?: 1.0f
+            val needsTransform = totalRotation != 0 || uiScale != 1.0f || softwareZoom > 1.0f || contrastValue != 0 || width > targetWidth
+
             if (needsTransform) {
                 try {
-                    // Use inSampleSize to decode a smaller version if the source is massive
-                    // This prevents OOM on high-res sensors (Main lens)
                     val options = BitmapFactory.Options().apply {
                         if (width > targetWidth * 2) {
                             inSampleSize = 2
                             if (width > targetWidth * 4) inSampleSize = 4
                         }
                     }
-                    
-                    var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, options)
-                    if (bitmap != null) {
-                        val matrix = Matrix()
-                        
-                        // 1. Handle Rotation
-                        if (totalRotation != 0) {
-                            matrix.postRotate(totalRotation.toFloat())
-                        }
-                        
-                        // 2. Handle Software Zoom (Virtual PTZ)
-                        // We calculate the crop region in the coordinate system AFTER rotation
-                        // because that's what the user sees and what zoomFocusX/Y refers to.
-                        var softwareZoomX = 0f
-                        var softwareZoomY = 0f
-                        if (softwareZoom > 1.0f) {
-                            // Temporary matrix to find rotated dimensions
-                            val tempMatrix = Matrix().apply { postRotate(totalRotation.toFloat()) }
-                            val rotatedRect = android.graphics.RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
-                            tempMatrix.mapRect(rotatedRect)
-                            
-                            val w = rotatedRect.width()
-                            val h = rotatedRect.height()
-                            
-                            val cropW = w / softwareZoom
-                            val cropH = h / softwareZoom
-                            
-                            softwareZoomX = Math.max(0f, Math.min(w - cropW, (zoomFocusX * w) - (cropW / 2f)))
-                            softwareZoomY = Math.max(0f, Math.min(h - cropH, (zoomFocusY * h) - (cropH / 2f)))
-                            
-                            // Apply crop via matrix (reverse translation)
-                            matrix.postTranslate(-softwareZoomX, -softwareZoomY)
-                        }
-                        
-                        // 3. Handle Downscaling
-                        // We want the final output width to match targetWidth
-                        // The softwareZoom effectively multiplies our scale, so we combine them
-                        val currentWidthAfterRotation = if (totalRotation % 180 != 0) bitmap.height.toFloat() else bitmap.width.toFloat()
-                        
-                        val autoScale = if (currentWidthAfterRotation > targetWidth) {
-                            targetWidth.toFloat() / currentWidthAfterRotation
-                        } else 1.0f
-                        
-                        // Combine all scale factors into ONE matrix operation
-                        // softwareZoom (to zoom in) * autoScale (to fit resolution)
-                        val combinedScale = softwareZoom * autoScale
-                        if (combinedScale != 1.0f) {
-                            matrix.postScale(combinedScale, combinedScale)
-                        }
-                        
-                        // Execute all transformations in ONE step
-                        val transformedWidth = (currentWidthAfterRotation * autoScale).toInt().coerceAtLeast(1)
-                        val transformedHeight = (if (totalRotation % 180 != 0) bitmap.width.toFloat() else bitmap.height.toFloat() * autoScale).toInt().coerceAtLeast(1)
-                        
-                        var workingBitmap = Bitmap.createBitmap(transformedWidth, transformedHeight, Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(workingBitmap)
-                        
-                        // If we have contrast adjustments, use a Paint
-                        val paint = if (contrastValue != 0) {
-                            val contrastFactor = 1.0f + (contrastValue / 100.0f)
-                            android.graphics.Paint().apply {
-                                colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply {
-                                    set(floatArrayOf(
-                                        contrastFactor, 0f, 0f, 0f, 0f,
-                                        0f, contrastFactor, 0f, 0f, 0f,
-                                        0f, 0f, contrastFactor, 0f, 0f,
-                                        0f, 0f, 0f, 1f, 0f
-                                    ))
-                                })
-                            }
-                        } else null
-                        
-                        canvas.drawBitmap(bitmap, matrix, paint)
-                        bitmap.recycle()
-                        
-                        val outputStream = java.io.ByteArrayOutputStream()
-                        workingBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-                        jpegBytes = outputStream.toByteArray()
-                        workingBitmap.recycle()
-                        outputStream.close()
+
+                    var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, options) ?: return
+
+                    val matrix = Matrix()
+                    if (totalRotation != 0) {
+                        matrix.postRotate(totalRotation.toFloat())
                     }
+                    if (uiScale != 1.0f) {
+                        matrix.postScale(uiScale, uiScale)
+                    }
+
+                    var workingBitmap = if (!matrix.isIdentity) {
+                        val transformed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                        if (transformed !== bitmap) bitmap.recycle()
+                        transformed
+                    } else {
+                        bitmap
+                    }
+
+                    if (softwareZoom > 1.0f) {
+                        val cropW = (workingBitmap.width / softwareZoom).toInt().coerceIn(1, workingBitmap.width)
+                        val cropH = (workingBitmap.height / softwareZoom).toInt().coerceIn(1, workingBitmap.height)
+                        val centerX = (zoomFocusX * workingBitmap.width).toInt()
+                        val centerY = (zoomFocusY * workingBitmap.height).toInt()
+                        val left = (centerX - cropW / 2).coerceIn(0, workingBitmap.width - cropW)
+                        val top = (centerY - cropH / 2).coerceIn(0, workingBitmap.height - cropH)
+                        val cropped = Bitmap.createBitmap(workingBitmap, left, top, cropW, cropH)
+                        if (cropped !== workingBitmap) workingBitmap.recycle()
+                        workingBitmap = cropped
+                    }
+
+                    if (workingBitmap.width > targetWidth) {
+                        val newW = targetWidth.coerceAtLeast(1)
+                        val newH = ((workingBitmap.height.toFloat() / workingBitmap.width.toFloat()) * newW).toInt().coerceAtLeast(1)
+                        val scaled = Bitmap.createScaledBitmap(workingBitmap, newW, newH, true)
+                        if (scaled !== workingBitmap) workingBitmap.recycle()
+                        workingBitmap = scaled
+                    }
+
+                    if (contrastValue != 0) {
+                        val contrastFactor = 1.0f + (contrastValue / 100.0f)
+                        val paint = android.graphics.Paint().apply {
+                            colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply {
+                                set(floatArrayOf(
+                                    contrastFactor, 0f, 0f, 0f, 0f,
+                                    0f, contrastFactor, 0f, 0f, 0f,
+                                    0f, 0f, contrastFactor, 0f, 0f,
+                                    0f, 0f, 0f, 1f, 0f
+                                ))
+                            })
+                        }
+                        val contrasted = Bitmap.createBitmap(
+                            workingBitmap.width,
+                            workingBitmap.height,
+                            workingBitmap.config ?: Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = android.graphics.Canvas(contrasted)
+                        canvas.drawBitmap(workingBitmap, 0f, 0f, paint)
+                        workingBitmap.recycle()
+                        workingBitmap = contrasted
+                    }
+
+                    val outputStream = java.io.ByteArrayOutputStream()
+                    workingBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+                    jpegBytes = outputStream.toByteArray()
+                    workingBitmap.recycle()
+                    outputStream.close()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error transforming image: ${e.message}")
-                    // On error, jpegBytes remains the original JPEG, which is safe but might be large
                 }
             }
 

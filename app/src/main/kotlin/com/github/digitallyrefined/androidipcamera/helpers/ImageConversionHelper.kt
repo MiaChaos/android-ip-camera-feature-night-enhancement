@@ -10,11 +10,15 @@ import java.nio.ByteBuffer
 fun convertYUV420toNV21(image: ImageProxy): ByteArray {
     val crop: Rect = image.cropRect
     val format: Int = image.format
-    val width: Int = crop.width()
-    val height: Int = crop.height()
+    val left = crop.left and 1.inv()
+    val top = crop.top and 1.inv()
+    val right = crop.right and 1.inv()
+    val bottom = crop.bottom and 1.inv()
+    val width: Int = (right - left).coerceAtLeast(2)
+    val height: Int = (bottom - top).coerceAtLeast(2)
     val planes: Array<ImageProxy.PlaneProxy> = image.planes
     val data = ByteArray(width * height * ImageFormat.getBitsPerPixel(format) / 8)
-    val rowData = ByteArray(planes[0].rowStride)
+    val rowData = ByteArray(planes.maxOf { it.rowStride })
 
     var channelOffset = 0
     var outputStride = 1
@@ -41,7 +45,7 @@ fun convertYUV420toNV21(image: ImageProxy): ByteArray {
         val shift: Int = if (i == 0) 0 else 1
         val w: Int = width shr shift
         val h: Int = height shr shift
-        buffer.position(rowStride * (crop.top shr shift) + pixelStride * (crop.left shr shift))
+        buffer.position(rowStride * (top shr shift) + pixelStride * (left shr shift))
         for (row in 0 until h) {
             val length: Int
             if (pixelStride == 1 && outputStride == 1) {
@@ -67,6 +71,7 @@ fun convertYUV420toNV21(image: ImageProxy): ByteArray {
 fun convertNV21toJPEG(nv21: ByteArray, width: Int, height: Int, quality: Int = 80): ByteArray {
     val out = ByteArrayOutputStream()
     val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-    yuv.compressToJpeg(Rect(0, 0, width, height), quality, out)
+    val ok = yuv.compressToJpeg(Rect(0, 0, width, height), quality, out)
+    if (!ok) return ByteArray(0)
     return out.toByteArray()
 }

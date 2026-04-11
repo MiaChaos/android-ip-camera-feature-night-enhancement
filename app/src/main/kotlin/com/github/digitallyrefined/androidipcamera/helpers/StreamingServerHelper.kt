@@ -511,7 +511,6 @@ class StreamingServerHelper(
 
                 val curResolution = getPref("camera_resolution", "low")
                 val curZoom = getPref("camera_zoom", "1.0")
-                val curSoftwareZoom = getPref("software_zoom", "1.0")
                 val curScale = getPref("stream_scale", "1.0")
                 val curExposure = getPref("camera_exposure", "0")
                 val curContrast = getPref("camera_contrast", "0")
@@ -552,10 +551,9 @@ class StreamingServerHelper(
                 val htmlResponse = htmlTemplate
                     .replace("{{CUR_CAMERA}}", curCamera)
                     .replace("{{POWERSAVING_LABEL}}", if (curPowerSaving) "Saving" else "Normal")
+                    .replace("{{PS_CLASS}}", if (curPowerSaving) "ps-saving" else "ps-normal")
                     .replace("{{PS_ACTIVE}}", if (curPowerSaving) "active" else "")
                     .replace("{{POWERSAVING_BTN_LABEL}}", if (curPowerSaving) "Disable Power Saving" else "Enable Power Saving")
-                    .replace("{{PREVIEW_BTN_LABEL}}", if (service?.isPreviewHidden == true) "Show Phone Preview" else "Hide Phone Preview")
-                    .replace("{{PREVIEW_ACTIVE}}", if (service?.isPreviewHidden == true) "active" else "")
                     .replace("{{RES_LOW_SELECTED}}", if (curResolution == "low") "selected" else "")
                     .replace("{{RES_MEDIUM_SELECTED}}", if (curResolution == "medium") "selected" else "")
                     .replace("{{RES_HIGH_SELECTED}}", if (curResolution == "high") "selected" else "")
@@ -565,7 +563,6 @@ class StreamingServerHelper(
                     .replace("{{RES_480_SELECTED}}", if (curResolution == "480p") "selected" else "")
                     .replace("{{RES_240_SELECTED}}", if (curResolution == "240p") "selected" else "")
                     .replace("{{CUR_ZOOM}}", curZoom)
-                    .replace("{{CUR_SOFTWARE_ZOOM}}", curSoftwareZoom)
                     .replace("{{CUR_SCALE}}", curScale)
                     .replace("{{CUR_EXPOSURE}}", curExposure)
                     .replace("{{CUR_CONTRAST}}", curContrast)
