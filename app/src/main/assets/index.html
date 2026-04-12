@@ -4,10 +4,38 @@
     <meta charset="utf-8"/>
     <title>Android IP Camera</title>
     <style>
+      :root {
+        --bg0: #0b0f14;
+        --bg1: #10151d;
+        --card: rgba(18, 24, 33, 0.56);
+        --card-strong: rgba(18, 24, 33, 0.72);
+        --stroke: rgba(255, 255, 255, 0.10);
+        --stroke-weak: rgba(255, 255, 255, 0.08);
+        --text: rgba(255, 255, 255, 0.92);
+        --text-2: rgba(255, 255, 255, 0.68);
+        --text-3: rgba(255, 255, 255, 0.45);
+        --blue: #4da3ff;
+        --blue-2: #2d7cff;
+        --cyan: #59d0ff;
+        --grad-blue: linear-gradient(135deg, #2d7cff 0%, #59d0ff 100%);
+        --green: #34c759;
+        --orange: #ff9f0a;
+        --red: #ff453a;
+        --purple: #af52de;
+        --shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+        --radius: 14px;
+        --radius-sm: 12px;
+        --blur: blur(14px) saturate(140%);
+      }
+
+      * { box-sizing: border-box; }
+
       body {
-        background: #121212;
-        color: #fff;
-        font-family: sans-serif;
+        background: radial-gradient(1200px 600px at 25% -10%, rgba(45, 124, 255, 0.28), transparent 60%),
+                    radial-gradient(900px 500px at 85% 10%, rgba(89, 208, 255, 0.20), transparent 60%),
+                    linear-gradient(180deg, var(--bg0), var(--bg1));
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
         margin: 0;
         display: flex;
         flex-direction: column;
@@ -16,67 +44,123 @@
       }
 
       .header {
-        padding: 10px 20px;
-        background: #1e1e1e;
-        border-bottom: 1px solid #333;
+        padding: 12px 16px;
+        margin: 12px 12px 10px;
+        border-radius: var(--radius);
+        background: var(--card);
+        border: 1px solid var(--stroke);
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow);
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 12px;
         z-index: 10;
+      }
+
+      .header-left {
+        display: flex;
+        align-items: center;
+        min-width: 180px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: 0.2px;
+      }
+
+      .header-center {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+      }
+
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
       }
 
       .dashboard {
         display: flex;
-        gap: 15px;
+        gap: 10px;
         font-size: 12px;
-        color: #aaa;
+        color: var(--text-2);
+        flex-wrap: wrap;
       }
 
       .dashboard-item {
         display: flex;
         align-items: center;
-        gap: 5px;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.22);
+        border: 1px solid var(--stroke-weak);
       }
       
       .pressure-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #34c759;
+        background: var(--green);
         display: inline-block;
-        transition: background 0.5s;
+        transition: background 0.3s;
       }
 
       .dashboard-val {
-        color: #007AFF;
+        color: var(--blue);
         font-weight: bold;
       }
 
-      .ps-saving { color: #ff9500 !important; }
-      .ps-normal { color: #007AFF !important; }
+      .ps-saving { color: var(--orange) !important; }
+      .ps-normal { color: var(--blue) !important; }
 
       .main {
         display: flex;
         flex: 1;
         overflow: hidden;
+        gap: 10px;
+        padding: 0 12px 12px;
       }
 
       .gallery-panel {
         width: 200px;
-        background: #1a1a1a;
-        border-right: 1px solid #333;
+        background: var(--card);
+        border: 1px solid var(--stroke);
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow);
+        border-radius: var(--radius);
         display: flex;
         flex-direction: column;
         overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
         padding: 10px;
         transition: transform 0.3s ease, width 0.3s ease;
         position: relative;
       }
 
+      .gallery-panel::-webkit-scrollbar {
+        width: 10px;
+      }
+
+      .gallery-panel::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .gallery-panel::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.14);
+        border: 3px solid transparent;
+        background-clip: padding-box;
+        border-radius: 999px;
+      }
+
       .gallery-panel.collapsed {
-        width: 0;
-        padding: 0;
-        transform: translateX(-200px);
+        display: none;
       }
 
       .gallery-toggle {
@@ -85,33 +169,27 @@
         right: 10px;
         width: 24px;
         height: 24px;
-        background: #333;
-        border: 1px solid #444;
-        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid var(--stroke-weak);
+        border-radius: 8px;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #888;
+        color: var(--text-2);
         z-index: 100;
         font-size: 14px;
-      }
-
-      .gallery-panel.collapsed .gallery-toggle {
-        position: fixed;
-        left: 10px;
-        top: 60px;
-        border-radius: 4px;
+        backdrop-filter: var(--blur);
       }
 
       .gallery-toggle:hover {
-        color: #fff;
-        background: #444;
+        color: var(--text);
+        border-color: var(--stroke);
       }
 
       .gallery-header {
         font-size: 12px;
-        color: #888;
+        color: var(--text-3);
         text-transform: uppercase;
         margin-top: 5px;
         margin-bottom: 15px;
@@ -122,11 +200,18 @@
       .gallery-item {
         position: relative;
         margin-bottom: 10px;
-        border-radius: 4px;
+        border-radius: 12px;
         overflow: hidden;
-        border: 1px solid #444;
-        background: #000;
+        border: 1px solid var(--stroke-weak);
+        background: rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(8px) saturate(140%);
         cursor: pointer;
+      }
+
+      .gallery-item:hover {
+        border-color: var(--stroke);
+        transform: translateY(-1px);
+        transition: transform 0.14s ease, border-color 0.14s ease;
       }
 
       .gallery-item img {
@@ -140,7 +225,7 @@
         right: 2px;
         width: 20px;
         height: 20px;
-        background: rgba(255, 59, 48, 0.8);
+        background: rgba(255, 69, 58, 0.75);
         color: white;
         border: none;
         border-radius: 50%;
@@ -153,17 +238,73 @@
       }
 
       .gallery-item:hover .delete-btn {
-        background: #ff3b30;
+        background: #ff453a;
+      }
+
+      .edge-toggle {
+        position: fixed;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 40px;
+        height: 56px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(18, 24, 33, 0.62);
+        backdrop-filter: var(--blur);
+        color: rgba(255, 255, 255, 0.92);
+        cursor: pointer;
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+        display: none;
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .edge-toggle:hover {
+        border-color: rgba(255, 255, 255, 0.24);
+      }
+
+      .edge-toggle:active {
+        transform: translateY(-50%) scale(0.98);
+      }
+
+      .edge-toggle.left {
+        left: 10px;
+      }
+
+      .edge-toggle.right {
+        right: 10px;
+      }
+
+      .edge-toggle .tri {
+        font-size: 18px;
+        line-height: 1;
+        color: rgba(255, 255, 255, 0.88);
       }
 
       .stream-container {
         flex: 1;
-        background: #000;
+        background: radial-gradient(800px 500px at 30% 20%, rgba(45, 124, 255, 0.18), transparent 60%),
+                    radial-gradient(700px 500px at 80% 30%, rgba(89, 208, 255, 0.12), transparent 60%),
+                    rgba(0, 0, 0, 0.35);
+        border: 1px solid var(--stroke);
+        border-radius: var(--radius);
+        backdrop-filter: blur(6px) saturate(120%);
+        box-shadow: var(--shadow);
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: auto;
         position: relative;
+      }
+
+      #streamCanvas {
+        max-width: 100%;
+        max-height: 100%;
+        border-radius: 16px;
+        box-shadow: 0 20px 70px rgba(0, 0, 0, 0.65);
+        background: rgba(0, 0, 0, 0.35);
       }
 
       /* Night Vision Filter */
@@ -190,11 +331,11 @@
         width: 160px;
         height: auto; /* Allow dynamic height based on aspect ratio */
         min-height: 40px;
-        background: rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 4px;
+        background: var(--card);
+        border: 1px solid var(--stroke);
+        border-radius: 12px;
         z-index: 100;
-        backdrop-filter: blur(5px);
+        backdrop-filter: var(--blur);
         overflow: hidden;
         cursor: crosshair;
         touch-action: none;
@@ -203,69 +344,206 @@
 
       .minimap-viewport {
         position: absolute;
-        border: 2px solid #007AFF;
-        background: rgba(0, 122, 255, 0.2);
+        border: 2px solid var(--blue);
+        background: rgba(77, 163, 255, 0.22);
         box-sizing: border-box;
         pointer-events: none;
       }
 
       .controls-panel {
         width: 350px;
-        background: #1e1e1e;
-        padding: 20px;
-        border-left: 1px solid #333;
+        background: var(--card);
+        padding: 16px;
+        border: 1px solid var(--stroke);
+        border-radius: var(--radius);
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .controls-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 2px 0 10px;
+      }
+
+      .controls-top-title {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.45);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        user-select: none;
+      }
+
+      .controls-collapse {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .controls-panel.collapsed {
+        display: none;
+      }
+
+      .sheet-handle {
+        display: none;
+        width: 100%;
+        align-items: center;
+        justify-content: center;
+        padding: 4px 0 8px;
+        cursor: pointer;
+      }
+
+      .sheet-grip {
+        width: 44px;
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .controls-scroll {
         overflow-y: auto;
+        max-height: 100%;
+        padding-right: 4px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(77, 163, 255, 0.40) transparent;
+        flex: 1;
+      }
+
+      .controls-scroll::-webkit-scrollbar {
+        width: 10px;
+      }
+
+      .controls-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .controls-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.16);
+        border: 3px solid transparent;
+        background-clip: padding-box;
+        border-radius: 999px;
+      }
+
+      .controls-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgba(77, 163, 255, 0.32);
+        border: 3px solid transparent;
+        background-clip: padding-box;
       }
 
       .btn {
-        background: #333;
-        color: #fff;
-        border: 1px solid #555;
-        padding: 8px 15px;
-        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--text);
+        border: 1px solid var(--stroke-weak);
+        padding: 9px 14px;
+        border-radius: 10px;
         cursor: pointer;
         font-size: 14px;
-        transition: 0.2s;
+        transition: transform 0.14s ease, background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+        backdrop-filter: blur(10px) saturate(140%);
       }
 
       .btn:hover {
-        background: #444;
+        border-color: var(--stroke);
+        background: rgba(0, 0, 0, 0.28);
+      }
+
+      .btn:active {
+        transform: scale(0.98);
+      }
+
+      .btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.12);
       }
 
       .btn.active {
-        background: #007AFF;
-        border-color: #007AFF;
+        background: var(--grad-blue);
+        border-color: rgba(255, 255, 255, 0.16);
       }
 
       .btn-action {
         width: 100%;
         margin-bottom: 15px;
-        background: #444;
-        border-color: #666;
         font-weight: bold;
       }
 
+      .btn-primary {
+        background: var(--grad-blue);
+        border-color: rgba(255, 255, 255, 0.16);
+      }
+
+      .btn-success {
+        background: rgba(52, 199, 89, 0.22);
+        border-color: rgba(52, 199, 89, 0.32);
+      }
+
+      .btn-danger {
+        background: rgba(255, 69, 58, 0.20);
+        border-color: rgba(255, 69, 58, 0.32);
+      }
+
       .setting-group {
-        background: #252525;
-        padding: 15px;
-        border-radius: 10px;
+        background: var(--card-strong);
+        padding: 14px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--stroke-weak);
         margin-bottom: 15px;
       }
 
       h3 {
         margin-top: 0;
         font-size: 14px;
-        color: #888;
+        color: var(--text-3);
         text-transform: uppercase;
         letter-spacing: 1px;
         margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .setting-group h3::after {
+        content: '▾';
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.45);
+        transform: translateY(-1px);
+      }
+
+      .setting-group.collapsed h3::after {
+        content: '▸';
+      }
+
+      .setting-group.collapsed > :not(h3) {
+        display: none !important;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .row > * {
+        flex: 1;
       }
 
       label {
         display: block;
         margin-bottom: 5px;
         font-size: 13px;
-        color: #ccc;
+        color: var(--text-2);
       }
 
       input[type=range] {
@@ -273,8 +551,9 @@
         margin-bottom: 20px;
         cursor: pointer;
         height: 10px;
-        background: #333;
-        border-radius: 5px;
+        background: rgba(0, 0, 0, 0.28);
+        border: 1px solid var(--stroke-weak);
+        border-radius: 999px;
         appearance: none;
       }
 
@@ -282,63 +561,164 @@
         appearance: none;
         width: 20px;
         height: 20px;
-        background: #007AFF;
+        background: var(--grad-blue);
         border-radius: 50%;
         cursor: pointer;
-        border: 2px solid #fff;
+        border: 2px solid rgba(255, 255, 255, 0.70);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
       }
 
       input[type=number],
       select {
-        background: #333;
-        color: #fff;
-        border: 1px solid #555;
+        background: rgba(0, 0, 0, 0.22);
+        color: var(--text);
+        border: 1px solid var(--stroke-weak);
         padding: 8px;
-        border-radius: 4px;
+        border-radius: 10px;
         width: 100%;
         margin-top: 5px;
         box-sizing: border-box;
       }
 
+      input[type=number]:focus-visible,
+      select:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.30);
+        border-color: rgba(77, 163, 255, 0.40);
+      }
+
       .val-badge {
         float: right;
-        color: #007AFF;
+        color: var(--blue);
         font-weight: bold;
       }
 
       .notice {
-        color: #555;
+        color: var(--text-3);
         font-size: 11px;
         text-align: center;
       }
 
-      @media (max-width: 900px) {
+      @media (max-width: 520px) {
+        .row {
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 900px) and (orientation: portrait) {
         .main {
           flex-direction: column;
         }
 
         .controls-panel {
           width: auto;
-          height: 45%;
-          border-left: none;
-          border-top: 1px solid #333;
+          position: fixed;
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          height: auto;
+          max-height: 82vh;
+          overflow: hidden;
+          padding: 10px 12px 12px;
+          border-radius: 18px;
+          transform: translateY(calc(100% - 70px));
+          transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .controls-panel.sheet-open {
+          transform: translateY(0);
+        }
+
+        .sheet-handle {
+          display: flex;
+        }
+
+        .controls-top {
+          display: none;
+        }
+
+        .controls-scroll {
+          overflow-y: auto;
+          max-height: calc(82vh - 26px);
+          padding-top: 6px;
+        }
+
+        .gallery-panel {
+          width: auto;
+          max-height: 180px;
+        }
+
+      }
+
+      @media (max-width: 900px) and (orientation: landscape) {
+        .header {
+          margin: 10px 10px 8px;
+          padding: 10px 12px;
+        }
+
+        .main {
+          padding: 0 10px 10px;
+        }
+
+        .gallery-panel {
+          width: 170px;
+        }
+
+        .controls-panel {
+          width: 300px;
+          padding: 12px;
+        }
+
+      }
+
+      @media (max-width: 600px) {
+        .header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .header-left {
+          min-width: 0;
+        }
+
+        .header-center {
+          justify-content: flex-start;
+        }
+
+        .dashboard {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+
+        .dashboard::-webkit-scrollbar {
+          display: none;
+        }
+
+        .header-right {
+          justify-content: flex-end;
         }
       }
     </style>
   </head>
   <body>
     <div class='header'>
-      <h2 style='margin:0;font-size:18px;'>Android IP Camera</h2>
-      
-      <div class="dashboard">
-        <div class="dashboard-item" id="powerSavingItem">🔋 <span id="dashPowerSaving" class="dashboard-val {{PS_CLASS}}">{{POWERSAVING_LABEL}}</span></div>
-        <div class="dashboard-item">🔋 <span id="dashBattery" class="dashboard-val">--%</span></div>
-        <div class="dashboard-item">🌡️ <span id="dashTemp" class="dashboard-val">--°C</span></div>
-        <div class="dashboard-item">📡 <span id="dashBitrate" class="dashboard-val">0 Mbps</span><span id="pressureDot" class="pressure-dot"></span></div>
-        <div class="dashboard-item">⏱️ <span id="dashUptime" class="dashboard-val">00:00</span></div>
+      <div class="header-left">
+        <h2 class="title">Android IP Camera</h2>
       </div>
 
-      <div>
+      <div class="header-center">
+        <div class="dashboard">
+          <div class="dashboard-item" id="powerSavingItem">🔋 <span id="dashPowerSaving" class="dashboard-val {{PS_CLASS}}">{{POWERSAVING_LABEL}}</span></div>
+          <div class="dashboard-item">🔋 <span id="dashBattery" class="dashboard-val">--%</span></div>
+          <div class="dashboard-item">🌡️ <span id="dashTemp" class="dashboard-val">--°C</span></div>
+          <div class="dashboard-item">📡 <span id="dashBitrate" class="dashboard-val">0 Mbps</span><span id="pressureDot" class="pressure-dot"></span></div>
+          <div class="dashboard-item">⏱️ <span id="dashUptime" class="dashboard-val">00:00</span></div>
+        </div>
+      </div>
+
+      <div class="header-right">
         <button id='fitBtn' class='btn active' onclick='setView("fit")'>Fit Screen</button>
         <button id='origBtn' class='btn' onclick='setView("original")'>Original Size</button>
       </div>
@@ -362,52 +742,113 @@
         </div>
       </div>
 
-      <div class='controls-panel'>
+      <div class='controls-panel' id='controlsPanel'>
+        <div class="sheet-handle" onclick="toggleControlsSheet()"><div class="sheet-grip"></div></div>
+        <div class="controls-top">
+          <div class="controls-top-title">Controls</div>
+          <button class="btn controls-collapse" onclick="toggleControlsCollapsed()" title="Collapse">⟩</button>
+        </div>
+        <div class="controls-scroll">
 
-        <div class='setting-group'>
-          <h3>Settings</h3>
-          <label>Camera</label>
-          <div style="margin-bottom: 15px">
-            <button id='backBtn' class='btn active' style='width: 49%;' onclick='setCamera("back")'>Back</button>
-            <button id='frontBtn' class='btn' style='width: 49%;' onclick='setCamera("front")'>Front</button>
+        <div class='setting-group' data-key="quick">
+          <h3>Quick</h3>
+          <div class="row" style="margin-bottom: 12px;">
+            <button id="snapshotBtn" class="btn btn-action btn-primary" onclick='takeSnapshot()'>📸 Snapshot</button>
+            <button id="nvBtn" class="btn btn-action" onclick='toggleNightVision()'>🌙 Night Vision</button>
           </div>
 
-          <div id="lensSelectGroup" style="margin-bottom: 15px; display: none;">
-            <label for="lensSelect">Specific Back Lens</label>
-            <select id="lensSelect" onchange='fetch("/?lens_id="+this.value)'>
-              {{BACK_LENSES_OPTIONS}}
-            </select>
+          <div class="row" style="margin-bottom: 12px;">
+            <button id="flashBtn" class="btn btn-action">💡 Flash On</button>
+            <button class='btn btn-action' onclick='cmd("rotate", 90)'>Rotate 90&deg;</button>
           </div>
 
-          <button class='btn btn-action' onclick='fetch("/?rotate=90")'>Rotate 90&deg;</button>
-
-          <button id="psBtn" class='btn btn-action {{PS_ACTIVE}}' onclick='togglePowerSaving()'>🔋 {{POWERSAVING_BTN_LABEL}}</button>
-
-          <div style="margin-bottom: 15px">
-            <button id="muteBtn" class="btn btn-action" style='width: 49%;'>🔇 Unmute</button>
-            <button id="flashBtn" class="btn btn-action" style='width: 49%;'>💡 Flash On</button>
-          </div>
-
-          <div style="margin-bottom: 15px">
-            <button id="snapshotBtn" class="btn btn-action" style='width: 49%;' onclick='takeSnapshot()'>📸 Snapshot</button>
-            <button id="nvBtn" class="btn btn-action" style='width: 49%;' onclick='toggleNightVision()'>🌙 Night Vision</button>
-          </div>
-
-          <div id="torchStrengthContainer" style="display: none; margin-top: 10px;">
+          <div id="torchStrengthContainer" style="display: none; margin-top: 6px;">
             <div id="torchSliderGroup">
               <label for="torchStrength">Flash Brightness <span class='val-badge' id='torchVal'>{{CUR_TORCH_STRENGTH}}</span></label>
-              <input id="torchStrength" type='range' min='1' max='{{MAX_TORCH_STRENGTH}}' step='1' value='{{CUR_TORCH_STRENGTH}}' oninput='document.getElementById("torchVal").innerText=this.value;fetch("/?torch_strength="+this.value)'>
+              <input id="torchStrength" type='range' min='1' max='{{MAX_TORCH_STRENGTH}}' step='1' value='{{CUR_TORCH_STRENGTH}}' oninput='document.getElementById("torchVal").innerText=this.value;cmdDebounced("torch_strength", this.value, "torch_strength", 90)'>
             </div>
-            <p id="torchSupportNotice" style="font-size: 11px; color: #888; margin-top: 5px;"></p>
+            <p id="torchSupportNotice" style="font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 5px;"></p>
           </div>
+        </div>
 
+        <div class='setting-group' data-key="system">
+          <h3>System</h3>
+          <button id="psBtn" class='btn btn-action {{PS_ACTIVE}}' onclick='togglePowerSaving()'>🔋 {{POWERSAVING_BTN_LABEL}}</button>
+          <button id="screenModeBtn" class='btn btn-action {{SCREEN_ACTIVE}}' onclick='toggleScreenMode()'>📱 Screen: {{SCREEN_LABEL}}</button>
+        </div>
+
+        <div class='setting-group' data-key="audio">
+          <h3>Audio</h3>
+          <button id="muteBtn" class="btn btn-action">🔇 Unmute</button>
           <div id="avDelayContainer">
             <label for="avDelay">AV Sync Delay <span class='val-badge' id='avDelayVal'>2.0s</span></label>
             <input type='range' id='avDelay' min='0' max='5' step='0.1' value='2.5'>
           </div>
+        </div>
 
+        <div class='setting-group' data-key="camera">
+          <h3>Camera</h3>
+          <div class="row" style="margin-bottom: 12px;">
+            <button id='backBtn' class='btn active' onclick='setCamera("back")'>Back</button>
+            <button id='frontBtn' class='btn' onclick='setCamera("front")'>Front</button>
+          </div>
+
+          <div id="lensSelectGroup" style="margin-bottom: 12px; display: none;">
+            <label for="lensSelect">Specific Back Lens</label>
+            <select id="lensSelect" onchange='cmd("lens_id", this.value)'>
+              {{BACK_LENSES_OPTIONS}}
+            </select>
+          </div>
+
+          <label>Auto Focus <span class='val-badge' id='focusModeVal'>{{CUR_FOCUS_MODE}}</span></label>
+          <div class="row" style="margin-bottom: 10px;">
+            <button id='afBtn' class='btn {{AF_ACTIVE}}' onclick='setFocusMode("auto")'>Auto</button>
+            <button id='mfBtn' class='btn {{MF_ACTIVE}}' onclick='setFocusMode("manual")'>Manual</button>
+          </div>
+
+          <button id="afTriggerBtn" class="btn btn-action btn-success" style="width: 100%; margin-bottom: 10px;" onclick="triggerAutoFocus()">🎯 Force Auto Focus</button>
+
+          <div id="manualFocusGroup" style="display: none; margin-bottom: 10px;">
+            <div id="focusUnsupported" style="display: none; color: #ff9f0a; font-size: 12px; margin-bottom: 10px;">
+              ⚠️ Manual focus not supported on this lens.
+            </div>
+            <div id="focusControls" style="pointer-events: auto;">
+              <label for="focusDist">Focus Distance <span class='val-badge' id='focusDistVal'>{{CUR_FOCUS_DISTANCE}}</span></label>
+              <input id="focusDist" type='range' min='0' max='{{MIN_FOCUS_DISTANCE}}' step='0.01' value='{{CUR_FOCUS_DISTANCE}}' oninput='updateFocusDist(this.value)'>
+              <p style="font-size: 10px; color: rgba(255,255,255,0.45);">(0 = Infinity, Higher = Closer)</p>
+            </div>
+          </div>
+
+          <label>Exposure Mode</label>
+          <div class="row" style="margin-bottom: 10px;">
+            <button id='aeBtn' class='btn {{AE_ACTIVE}}' onclick='setExposureMode("auto")'>Auto</button>
+            <button id='meBtn' class='btn {{ME_ACTIVE}}' onclick='setExposureMode("manual")'>Manual</button>
+          </div>
+
+          <div id="manualExposureUnsupported" style="display: none; color: #ff9f0a; font-size: 11px; margin-bottom: 10px; border: 1px dashed rgba(255, 159, 10, 0.8); padding: 8px; border-radius: 10px;">
+            ⚠️ Hardware manual exposure (ISO/Shutter) is not supported by this lens on your device.
+          </div>
+
+          <div id="manualExposureGroup" style="display: none;">
+            <label for="isoSlider">ISO <span class='val-badge' id='isoVal'>{{CUR_ISO}}</span></label>
+            <input id="isoSlider" type='range' min='{{ISO_MIN}}' max='{{ISO_MAX}}' step='10' value='{{CUR_ISO}}' oninput='updateExposure()'>
+
+            <label for="shutterSlider">Shutter Speed <span class='val-badge' id='shutterVal'>--</span></label>
+            <input id="shutterSlider" type='range' min='0' max='1000' step='1' value='0' oninput='updateExposure()'>
+            <p id="shutterLabel" style="font-size: 10px; color: rgba(255,255,255,0.45);"></p>
+          </div>
+
+          <div id="fpsControlGroup" style="margin-top: 10px;">
+            <label for="fpsSlider">Target Frame Rate <span class='val-badge' id='fpsVal'>{{CUR_FPS}} FPS</span></label>
+            <input id="fpsSlider" type='range' min='{{FPS_MIN}}' max='{{FPS_MAX}}' step='1' value='{{CUR_FPS}}' oninput='updateFPS()'>
+            <p id="fpsLabel" style="font-size: 10px; color: rgba(255,255,255,0.45);"></p>
+          </div>
+        </div>
+
+        <div class='setting-group' data-key="stream">
+          <h3>Stream</h3>
           <label for="resolutionSelect">Resolution</label>
-          <select id="resolutionSelect" style="margin-bottom: 20px" onchange='fetch("/?resolution="+this.value)'>
+          <select id="resolutionSelect" style="margin-bottom: 12px" onchange='cmd("resolution", this.value)'>
             <option value='240p' {{RES_240_SELECTED}}>240p (Saving Mode)</option>
             <option value='480p' {{RES_480_SELECTED}}>480p (Standard)</option>
             <option value='720p' {{RES_720_SELECTED}}>720p (HD)</option>
@@ -418,76 +859,55 @@
             <option value='high' {{RES_HIGH_SELECTED}}>Auto: High</option>
           </select>
 
-          <label for="zoom">Zoom <span class='val-badge' id='zoomVal'>{{CUR_ZOOM}}x</span></label>
+          <label for="zoom">Hardware Zoom <span class='val-badge' id='zoomVal'>{{CUR_ZOOM}}x</span></label>
           <input id="zoom" type='range' min='1' max='8' step='0.1' value='{{CUR_ZOOM}}' oninput='updateZoom(this.value)'>
 
+          <label for="softwareZoom">Software Crop (Virtual PTZ) <span class='val-badge' id='softwareZoomVal'>{{CUR_SOFTWARE_ZOOM}}x</span></label>
+          <input id="softwareZoom" type='range' min='1' max='8' step='0.1' value='{{CUR_SOFTWARE_ZOOM}}' oninput='updateSoftwareZoom(this.value)'>
+
           <label for="scale">Scale <span class='val-badge' id='scaleVal'>{{CUR_SCALE}}x</span></label>
-          <input id="scale" type='range' min='0.5' max='2.0' step='0.1' value='{{CUR_SCALE}}' oninput='setView("original"); document.getElementById("scaleVal").innerText=this.value+"x";fetch("/?scale="+this.value)'>
-
-          <label for="exposure">Exposure <span class='val-badge' id='exposureVal'>{{CUR_EXPOSURE}}</span></label>
-          <input id="exposure" type='range' min='-10' max='10' step='1' value='{{CUR_EXPOSURE}}' oninput='document.getElementById("exposureVal").innerText=this.value;fetch("/?exposure="+this.value)'>
-
-          <label for="contrast">Contrast <span class='val-badge' id='contVal'>{{CUR_CONTRAST}}</span></label>
-          <input id="contrast" type='range' min='-50' max='50' step='10' value='{{CUR_CONTRAST}}' oninput='document.getElementById("contVal").innerText=this.value;fetch("/?contrast="+this.value)'>
-
-          <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 15px;">
-            <label>Focus Mode <span class='val-badge' id='focusModeVal'>{{CUR_FOCUS_MODE}}</span></label>
-            <div style="margin-bottom: 10px">
-              <button id='afBtn' class='btn {{AF_ACTIVE}}' style='width: 49%;' onclick='setFocusMode("auto")'>Auto</button>
-              <button id='mfBtn' class='btn {{MF_ACTIVE}}' style='width: 49%;' onclick='setFocusMode("manual")'>Manual</button>
-            </div>
-            
-            <button id="afTriggerBtn" class="btn btn-action" style="width: 100%; margin-bottom: 10px; background: #34c759;" onclick="triggerAutoFocus()">🎯 Force Auto Focus</button>
-            
-            <div id="manualFocusGroup" style="display: none;">
-              <div id="focusUnsupported" style="display: none; color: #ff9500; font-size: 12px; margin-bottom: 10px;">
-                ⚠️ Manual focus not supported on this lens.
-              </div>
-              <div id="focusControls" style="pointer-events: auto;">
-                <label for="focusDist">Focus Distance <span class='val-badge' id='focusDistVal'>{{CUR_FOCUS_DISTANCE}}</span></label>
-                <input id="focusDist" type='range' min='0' max='{{MIN_FOCUS_DISTANCE}}' step='0.01' value='{{CUR_FOCUS_DISTANCE}}' oninput='updateFocusDist(this.value)'>
-                <p style="font-size: 10px; color: #888;">(0 = Infinity, Higher = Closer)</p>
-              </div>
-            </div>
-          </div>
+          <input id="scale" type='range' min='0.5' max='2.0' step='0.1' value='{{CUR_SCALE}}' oninput='setView("original"); document.getElementById("scaleVal").innerText=this.value+"x";cmdDebounced("scale", this.value, "scale", 90)'>
 
           <label for="delay">Frame Delay (ms)</label>
-          <input id="delay" type='number' min='10' max='1000' value='{{CUR_DELAY}}' onchange='fetch("/?delay="+this.value)'>
+          <input id="delay" type='number' min='10' max='1000' value='{{CUR_DELAY}}' onchange='cmd("delay", this.value)'>
+        </div>
+
+        <div class='setting-group' data-key="image">
+          <h3>Image</h3>
+          <label for="exposure">Exposure <span class='val-badge' id='exposureVal'>{{CUR_EXPOSURE}}</span></label>
+          <input id="exposure" type='range' min='-10' max='10' step='1' value='{{CUR_EXPOSURE}}' oninput='document.getElementById("exposureVal").innerText=this.value;cmdDebounced("exposure", this.value, "exposure", 90)'>
+          <p style="font-size: 10px; color: #888;">Hardware exposure compensation with software digital gain fallback.</p>
+
+          <label for="contrast">Contrast <span class='val-badge' id='contVal'>{{CUR_CONTRAST}}</span></label>
+          <input id="contrast" type='range' min='-50' max='50' step='10' value='{{CUR_CONTRAST}}' oninput='document.getElementById("contVal").innerText=this.value;cmdDebounced("contrast", this.value, "contrast", 90)'>
         </div>
 
         <div class='setting-group'>
           <h3>Night Enhancement 🌙</h3>
-          <button id="nightToggle" class="btn btn-action" onclick="toggleNightPanel()">Expand Night Options ▾</button>
-          
-          <div id="nightPanel" style="display: none; padding-top: 10px; border-top: 1px solid #444;">
             
-            <!-- 1. Temporal Frame Averaging -->
+            <!-- 1. Temporal Noise Reduction (TNR) -->
             <div style="margin-bottom: 20px;">
-              <label>Long Exposure (Frame Avg) <span class='val-badge' id='avgVal'>OFF</span></label>
+              <label>Temporal Noise Reduction (TNR) <span class='val-badge' id='avgVal'>OFF</span></label>
               <input id="avgFrames" type='range' min='1' max='10' step='1' value='1' oninput='updateNightSettings()'>
-              <p style="font-size: 10px; color: #888;">Stacks frames to reduce noise and boost light. (Static scene only)</p>
-            </div>
-
-            <!-- 2. Manual Exposure Control -->
-            <div style="margin-bottom: 20px; padding: 10px; background: #1a1a1a; border-radius: 6px;">
-              <label>Manual Exposure (Hardware)</label>
               
-              <div id="manualExposureUnsupported" style="display: none; color: #ff9500; font-size: 11px; margin-bottom: 10px; border: 1px dashed #ff9500; padding: 5px; border-radius: 4px;">
-                ⚠️ Hardware manual exposure (ISO/Shutter) is not supported by this lens on your device.
-              </div>
+              <!-- Smart TNR Settings Collapsible -->
+              <div style="margin-top: 10px;">
+                <button class="btn" style="width: 100%; font-size: 11px; padding: 4px; background: #333;" onclick="toggleAdvancedTnr()">✨ Smart TNR Settings ▾</button>
+                <div id="advancedTnrSettings" style="display: none; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-top: 5px; border: 1px solid var(--stroke-weak);">
+                  
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 10px;">
+                    <input type="checkbox" id="tnrSmartMode" onchange="updateNightSettings()">
+                    <span>Anti-Ghosting (Motion Aware)</span>
+                  </label>
 
-              <div style="margin-bottom: 10px; display: flex; gap: 5px;">
-                <button id='aeBtn' class='btn {{AE_ACTIVE}}' style='flex: 1;' onclick='setExposureMode("auto")'>Auto</button>
-                <button id='meBtn' class='btn {{ME_ACTIVE}}' style='flex: 1;' onclick='setExposureMode("manual")'>Manual</button>
-              </div>
-              
-              <div id="manualExposureGroup" style="display: none;">
-                <label for="isoSlider">ISO <span class='val-badge' id='isoVal'>{{CUR_ISO}}</span></label>
-                <input id="isoSlider" type='range' min='{{ISO_MIN}}' max='{{ISO_MAX}}' step='10' value='{{CUR_ISO}}' oninput='updateExposure()'>
-                
-                <label for="shutterSlider">Shutter Speed <span class='val-badge' id='shutterVal'>--</span></label>
-                <input id="shutterSlider" type='range' min='{{SHUTTER_MIN}}' max='{{SHUTTER_MAX}}' step='100000' value='{{CUR_SHUTTER}}' oninput='updateExposure()'>
-                <p id="shutterLabel" style="font-size: 10px; color: #888;"></p>
+                  <label>Motion Sensitivity <span class='val-badge' id='tnrMotionVal'>50</span></label>
+                  <input id="tnrMotionSlider" type='range' min='10' max='200' step='5' value='50' oninput='updateNightSettings()'>
+                  <p style="font-size: 9px; color: #888;">Lower = More sensitive to movement (reduces ghosting but keeps more noise).</p>
+
+                  <label>History Retention <span class='val-badge' id='tnrBlendVal'>80%</span></label>
+                  <input id="tnrBlendSlider" type='range' min='0' max='0.95' step='0.05' value='0.8' oninput='updateNightSettings()'>
+                  <p style="font-size: 9px; color: #888;">Higher = Cleaner background, but potentially more lag.</p>
+                </div>
               </div>
             </div>
 
@@ -528,6 +948,32 @@
             <div style="margin-bottom: 20px;">
               <label>Local Adaptive Contrast <span class='val-badge' id='claheVal'>OFF</span></label>
               <input id="claheSlider" type='range' min='0' max='1.0' step='0.1' value='0' oninput='updateNightSettings()'>
+              
+              <!-- Advanced LAC Settings Collapsible -->
+              <div style="margin-top: 10px;">
+                <button class="btn" style="width: 100%; font-size: 11px; padding: 4px; background: #333;" onclick="toggleAdvancedClahe()">⚙️ Advanced LAC Settings ▾</button>
+                <div id="advancedClaheSettings" style="display: none; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-top: 5px; border: 1px solid var(--stroke-weak);">
+                  
+                  <label>Grid Density (Sample points) <span class='val-badge' id='claheGridVal'>8x8</span></label>
+                  <input id="claheGridSlider" type='range' min='4' max='16' step='4' value='8' oninput='updateNightSettings()'>
+                  
+                  <label>Robust Range (p5/p95) <span class='val-badge' id='claheRangeVal'>90%</span></label>
+                  <input id="claheRangeSlider" type='range' min='0' max='1.0' step='0.1' value='0.9' oninput='updateNightSettings()'>
+                  <p style="font-size: 9px; color: #888;">Higher = Less aggressive, less noise amplification.</p>
+
+                  <label>Min Range Threshold <span class='val-badge' id='claheMinRangeVal'>10</span></label>
+                  <input id="claheMinRangeSlider" type='range' min='0' max='50' step='5' value='10' oninput='updateNightSettings()'>
+
+                  <label>Temporal Smoothing <span class='val-badge' id='claheSmoothVal'>50%</span></label>
+                  <input id="claheSmoothSlider" type='range' min='0' max='1.0' step='0.1' value='0.5' oninput='updateNightSettings()'>
+                  <p style="font-size: 9px; color: #888;">Reduce flickering/shimmering in low light.</p>
+
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 10px;">
+                    <input type="checkbox" id="claheLumaOnly" checked onchange="updateNightSettings()">
+                    <span>Luma-Only (Preserve Colors)</span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <!-- 9. Hardware-Side Pixel Binning (SNR Boost) -->
@@ -536,8 +982,6 @@
               <button id="binningBtn" class="btn btn-action" style="width: 100%; background: #444;" onclick="toggleBinning()">Enable Pixel Binning</button>
               <p style="font-size: 10px; color: #888;">Hardware-side processing to reduce noise before sending. Reduces resolution by half.</p>
             </div>
-
-          </div>
         </div>
 
         <div class='setting-group'>
@@ -597,11 +1041,75 @@
         </div>
 
         <p class="notice">Some changes will momentarily restart the camera.</p>
+        </div>
       </div>
     </div>
+    <button id="leftEdgeToggle" class="edge-toggle left" onclick="toggleGallery(true)" title="Open Snapshots"><span class="tri">▸</span></button>
+    <button id="rightEdgeToggle" class="edge-toggle right" onclick="toggleControlsCollapsed(false)" title="Open Controls"><span class="tri">◂</span></button>
 
     <script>
-      let currentCamera = '{{CUR_CAMERA}}';
+      const FETCH_OPTS = { credentials: 'include' };
+      const DEBOUNCE_TIMERS = {};
+      function tpl(value, fallback) {
+        return (typeof value === 'string' && value.indexOf('{{') !== -1) ? fallback : value;
+      }
+      function safeFetch(url) {
+        try {
+          return fetch(url, FETCH_OPTS).catch(() => null);
+        } catch (_) {
+          return Promise.resolve(null);
+        }
+      }
+      function cmd(key, value) {
+        return safeFetch('/?' + encodeURIComponent(key) + '=' + encodeURIComponent(String(value)));
+      }
+      function cmdDebounced(key, value, group, waitMs = 90) {
+        const groupKey = String(group || key);
+        if (DEBOUNCE_TIMERS[groupKey]) clearTimeout(DEBOUNCE_TIMERS[groupKey]);
+        DEBOUNCE_TIMERS[groupKey] = setTimeout(() => {
+          cmd(key, value);
+        }, waitMs);
+      }
+      function cmdQuery(query) {
+        return safeFetch('/?' + query);
+      }
+      function toggleControlsSheet(forceState) {
+        const panel = document.getElementById('controlsPanel');
+        if (!panel) return;
+        const next = (typeof forceState === 'boolean') ? forceState : !panel.classList.contains('sheet-open');
+        if (next) panel.classList.add('sheet-open');
+        else panel.classList.remove('sheet-open');
+        try { localStorage.setItem('controls_sheet_open', next ? '1' : '0'); } catch (_) {}
+      }
+
+      function toggleControlsCollapsed(forceState) {
+        const panel = document.getElementById('controlsPanel');
+        if (!panel) return;
+        const next = (typeof forceState === 'boolean') ? forceState : !panel.classList.contains('collapsed');
+        if (next) panel.classList.add('collapsed');
+        else panel.classList.remove('collapsed');
+        try { localStorage.setItem('controls_panel_collapsed', next ? '1' : '0'); } catch (_) {}
+        updateEdgeToggles();
+      }
+
+      function initCollapsibleSections() {
+        const groups = Array.from(document.querySelectorAll('.setting-group'));
+        groups.forEach((group, idx) => {
+          const header = group.querySelector('h3');
+          if (!header) return;
+          const key = 'section_open_' + (group.dataset.key || idx);
+          try {
+            const saved = localStorage.getItem(key);
+            if (saved === '0') group.classList.add('collapsed');
+          } catch (_) {}
+          header.addEventListener('click', () => {
+            group.classList.toggle('collapsed');
+            try { localStorage.setItem(key, group.classList.contains('collapsed') ? '0' : '1'); } catch (_) {}
+          });
+        });
+      }
+
+      let currentCamera = tpl('{{CUR_CAMERA}}', 'back');
       const audioEl = document.getElementById('audioEl');
       const muteBtn = document.getElementById('muteBtn');
       const avDelayContainer = document.getElementById('avDelayContainer');
@@ -617,7 +1125,7 @@
       let lastDrawn = null;
       let drawing = false;
       let viewMode = 'fit';
-      let torchState = ('{{CUR_TORCH}}' === 'on') ? 'on' : 'off';
+      let torchState = (tpl('{{CUR_TORCH}}', 'off') === 'on') ? 'on' : 'off';
       let zoomFocusX = parseFloat('{{CUR_ZOOM_FOCUS_X}}') || 0.5;
       let zoomFocusY = parseFloat('{{CUR_ZOOM_FOCUS_Y}}') || 0.5;
       let isDraggingMinimap = false;
@@ -628,11 +1136,30 @@
       let nightGamma = 1.0;
       let nightSharpen = 0;
       let nightClahe = 0;
+      let nightClaheGrid = 8;
+      let nightClahePLow = 0.05;
+      let nightClahePHigh = 0.95;
+      let nightClaheSmoothing = 0.5;
+      let nightClaheLumaOnly = true;
+      let nightClaheMinRange = 10;
+      let claheHistory = null; 
+
+      // TNR / Smart TNR state
+      let tnrSmartMode = false;
+      let tnrMotionThreshold = 50;
+      let tnrBlendStrength = 0.8;
+      let tnrAccumulationCanvas = document.createElement('canvas');
+      let tnrAccumulationCtx = tnrAccumulationCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+      let tnrMaskCanvas = document.createElement('canvas');
+      let tnrMaskCtx = tnrMaskCanvas.getContext('2d', { willReadFrequently: true });
+      let lastTnrBmp = null;
       let isBinning = ('{{CUR_BINNING}}' === 'on');
       let isMonochrome = false;
       let isHeatmap = false;
       let frameBuffer = [];
       let wakeLock = null;
+      let shutterMinNs = parseInt('{{SHUTTER_MIN}}') || 100000;
+      let shutterMaxNs = parseInt('{{SHUTTER_MAX}}') || 1000000000;
 
       // Initial state from server templates
       const initialFocusMode = '{{CUR_FOCUS_MODE}}';
@@ -665,8 +1192,11 @@
             if (settings.nightVisionEnabled) toggleNightVision();
             if (settings.nightAvgFrames) {
               document.getElementById('avgFrames').value = settings.nightAvgFrames;
-              updateNightSettings();
             }
+            if (settings.tnrSmartMode !== undefined) document.getElementById('tnrSmartMode').checked = settings.tnrSmartMode;
+            if (settings.tnrMotionThreshold) document.getElementById('tnrMotionSlider').value = settings.tnrMotionThreshold;
+            if (settings.tnrBlendStrength) document.getElementById('tnrBlendSlider').value = settings.tnrBlendStrength;
+
             if (settings.nightGain) {
               document.getElementById('gainSlider').value = settings.nightGain;
               updateNightSettings();
@@ -681,8 +1211,14 @@
             }
             if (settings.nightClahe) {
               document.getElementById('claheSlider').value = settings.nightClahe;
-              updateNightSettings();
             }
+            if (settings.nightClaheGrid) document.getElementById('claheGridSlider').value = settings.nightClaheGrid;
+            if (settings.nightClaheRange) document.getElementById('claheRangeSlider').value = settings.nightClaheRange;
+            if (settings.nightClaheMinRange) document.getElementById('claheMinRangeSlider').value = settings.nightClaheMinRange;
+            if (settings.nightClaheSmoothing) document.getElementById('claheSmoothSlider').value = settings.nightClaheSmoothing;
+            if (settings.nightClaheLumaOnly !== undefined) document.getElementById('claheLumaOnly').checked = settings.nightClaheLumaOnly;
+
+            updateNightSettings();
             if (settings.isBinning) toggleBinning(true);
             if (settings.isMonochrome) toggleMonochrome();
             if (settings.isHeatmap) toggleHeatmap();
@@ -706,10 +1242,18 @@
             avDelay: document.getElementById('avDelay').value,
             nightVisionEnabled,
             nightAvgFrames,
+            tnrSmartMode,
+            tnrMotionThreshold,
+            tnrBlendStrength,
             nightGain,
             nightGamma,
             nightSharpen,
             nightClahe,
+            nightClaheGrid,
+            nightClaheRange: document.getElementById('claheRangeSlider').value,
+            nightClaheMinRange,
+            nightClaheSmoothing,
+            nightClaheLumaOnly,
             isBinning,
             isMonochrome,
             isHeatmap,
@@ -768,17 +1312,6 @@
         saveUISettings();
       }
 
-      function toggleNightPanel() {
-        const panel = document.getElementById('nightPanel');
-        const btn = document.getElementById('nightToggle');
-        const isHidden = panel.style.display === 'none';
-        panel.style.display = isHidden ? 'block' : 'none';
-        btn.textContent = isHidden ? 'Collapse Night Options ▴' : 'Expand Night Options ▾';
-        if (isHidden) {
-          updateExposureLabel();
-        }
-      }
-
       function updateNightSettings() {
         const avg = parseInt(document.getElementById('avgFrames').value);
         nightAvgFrames = avg;
@@ -800,11 +1333,38 @@
         nightClahe = clahe;
         document.getElementById('claheVal').textContent = clahe > 0 ? (clahe * 100).toFixed(0) + '%' : 'OFF';
 
+        // TNR / Smart TNR settings
+        tnrSmartMode = document.getElementById('tnrSmartMode').checked;
+        tnrMotionThreshold = parseInt(document.getElementById('tnrMotionSlider').value);
+        document.getElementById('tnrMotionVal').textContent = tnrMotionThreshold;
+        tnrBlendStrength = parseFloat(document.getElementById('tnrBlendSlider').value);
+        document.getElementById('tnrBlendVal').textContent = (tnrBlendStrength * 100).toFixed(0) + '%';
+
+        // Advanced LAC settings
+        const grid = parseInt(document.getElementById('claheGridSlider').value);
+        nightClaheGrid = grid;
+        document.getElementById('claheGridVal').textContent = grid + 'x' + grid;
+
+        const range = parseFloat(document.getElementById('claheRangeSlider').value);
+        nightClahePLow = (1.0 - range) / 2.0;
+        nightClahePHigh = 1.0 - nightClahePLow;
+        document.getElementById('claheRangeVal').textContent = (range * 100).toFixed(0) + '%';
+
+        const minRange = parseInt(document.getElementById('claheMinRangeSlider').value);
+        nightClaheMinRange = minRange;
+        document.getElementById('claheMinRangeVal').textContent = minRange;
+
+        const smoothing = parseFloat(document.getElementById('claheSmoothSlider').value);
+        nightClaheSmoothing = smoothing;
+        document.getElementById('claheSmoothVal').textContent = (smoothing * 100).toFixed(0) + '%';
+
+        nightClaheLumaOnly = document.getElementById('claheLumaOnly').checked;
+
         saveUISettings();
       }
 
       function setExposureMode(mode) {
-        fetch("/?exposure_mode=" + mode);
+        cmd("exposure_mode", mode);
         const aeBtn = document.getElementById('aeBtn');
         const meBtn = document.getElementById('meBtn');
         const group = document.getElementById('manualExposureGroup');
@@ -822,42 +1382,128 @@
       }
 
       let lastExpFetch = 0;
+      function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+      function safeLog(x) { return Math.log(Math.max(1e-9, x)); }
+      function shutterNsToPos(ns) {
+        const min = Math.max(1, shutterMinNs);
+        const max = Math.max(min + 1, shutterMaxNs);
+        const v = clamp(parseInt(ns) || min, min, max);
+        const t = (safeLog(v) - safeLog(min)) / (safeLog(max) - safeLog(min));
+        return Math.round(clamp(t, 0, 1) * 1000);
+      }
+      function shutterPosToNs(pos) {
+        const min = Math.max(1, shutterMinNs);
+        const max = Math.max(min + 1, shutterMaxNs);
+        const t = clamp((parseInt(pos) || 0) / 1000, 0, 1);
+        const v = Math.exp(safeLog(min) + t * (safeLog(max) - safeLog(min)));
+        const rounded = Math.round(v / 1000) * 1000;
+        return clamp(rounded, min, max);
+      }
+      function formatShutter(ns) {
+        const sec = ns / 1e9;
+        if (sec >= 1) return sec.toFixed(sec >= 10 ? 0 : 1) + 's';
+        const ms = ns / 1e6;
+        if (ms >= 10) return ms.toFixed(0) + 'ms';
+        if (ms >= 1) return ms.toFixed(1) + 'ms';
+        const hz = Math.max(1, Math.round(1 / Math.max(1e-6, sec)));
+        return '1/' + hz + 's';
+      }
       function updateExposure() {
         const iso = document.getElementById('isoSlider').value;
-        const shutter = document.getElementById('shutterSlider').value;
+        const shutterPos = document.getElementById('shutterSlider').value;
+        const shutter = shutterPosToNs(shutterPos);
         
         document.getElementById('isoVal').textContent = iso;
         updateExposureLabel();
         
+        // Linkage: If shutter is longer than 1/FPS, we must drop FPS
+        const shutterSec = shutter / 1e9;
+        const maxFps = Math.floor(1.0 / Math.max(0.001, shutterSec));
+        const fpsSlider = document.getElementById('fpsSlider');
+        if (fpsSlider && parseInt(fpsSlider.value) > maxFps) {
+          fpsSlider.value = Math.max(parseInt(fpsSlider.min), maxFps);
+          updateFPS(true); // Update UI only, don't re-trigger linkage
+        }
+
         const now = Date.now();
         if (now - lastExpFetch > 100) {
           lastExpFetch = now;
-          fetch("/?iso=" + iso + "&shutter=" + shutter).catch(() => {});
+          cmdQuery("iso=" + encodeURIComponent(iso) + "&shutter=" + encodeURIComponent(shutter));
         }
       }
 
-      function updateExposureLabel() {
-        const shutter = document.getElementById('shutterSlider').value;
-        const shutterMs = (shutter / 1000000).toFixed(1);
-        const shutterSec = (1 / (shutter / 1000000000)).toFixed(0);
-        document.getElementById('shutterVal').textContent = shutterMs + 'ms';
-        document.getElementById('shutterLabel').textContent = 'Approx. 1/' + shutterSec + 's exposure';
+      function updateFPS(skipLinkage = false) {
+        const fpsSlider = document.getElementById('fpsSlider');
+        const fps = parseInt(fpsSlider.value);
+        document.getElementById('fpsVal').textContent = fps + ' FPS';
+        
+        if (!skipLinkage) {
+          // Linkage: If FPS is high, shutter speed cannot be too slow
+          const maxShutterSec = 1.0 / fps;
+          const maxShutterNs = maxShutterSec * 1e9;
+          const shutterSlider = document.getElementById('shutterSlider');
+          if (shutterSlider) {
+            const currentShutterNs = shutterPosToNs(shutterSlider.value);
+            if (currentShutterNs > maxShutterNs) {
+              shutterSlider.value = shutterNsToPos(maxShutterNs);
+              // Send the updated shutter speed
+              const iso = document.getElementById('isoSlider').value;
+              cmdQuery("iso=" + encodeURIComponent(iso) + "&shutter=" + encodeURIComponent(Math.floor(maxShutterNs)));
+            }
+          }
+        }
+        
+        updateExposureLabel();
+
+        cmdDebounced("fps", fps, "fps", 150);
       }
+
+      function updateExposureLabel() {
+        const shutterPos = document.getElementById('shutterSlider').value;
+        const ns = shutterPosToNs(shutterPos);
+        document.getElementById('shutterVal').textContent = formatShutter(ns);
+        const sec = ns / 1e9;
+        const maxFpsByShutter = Math.floor(1.0 / Math.max(0.001, sec));
+        
+        document.getElementById('shutterLabel').textContent =
+          sec >= 0.033 ? ('Exposure: ' + formatShutter(ns) + ' (Max FPS: ' + maxFpsByShutter + ')') : ('Exposure: ' + formatShutter(ns));
+        
+        const fpsSlider = document.getElementById('fpsSlider');
+        if (fpsSlider) {
+          const targetFps = parseInt(fpsSlider.value);
+          if (targetFps > maxFpsByShutter) {
+            document.getElementById('fpsLabel').textContent = '⚠️ Limited by shutter to ' + maxFpsByShutter + ' FPS';
+            document.getElementById('fpsLabel').style.color = '#ff9f0a';
+          } else {
+            document.getElementById('fpsLabel').textContent = 'Target: ' + targetFps + ' FPS';
+            document.getElementById('fpsLabel').style.color = 'rgba(255,255,255,0.45)';
+          }
+        }
+      }
+
+      try {
+        const cur = parseInt('{{CUR_SHUTTER}}') || shutterMinNs;
+        const shutter = document.getElementById('shutterSlider');
+        if (shutter) shutter.value = shutterNsToPos(cur);
+        
+        const curFps = parseInt('{{CUR_FPS}}') || 30;
+        const fpsSlider = document.getElementById('fpsSlider');
+        if (fpsSlider) fpsSlider.value = curFps;
+        updateExposureLabel();
+      } catch (_) {}
 
       function toggleBinning(skipFetch = false) {
         isBinning = !isBinning;
         const btn = document.getElementById('binningBtn');
         if (isBinning) {
           btn.textContent = 'Disable Pixel Binning';
-          btn.style.background = '#007AFF';
           btn.classList.add('active');
         } else {
           btn.textContent = 'Enable Pixel Binning';
-          btn.style.background = '#444';
           btn.classList.remove('active');
         }
         if (!skipFetch) {
-          fetch("/?pixel_binning=" + (isBinning ? "on" : "off"));
+          cmd("pixel_binning", isBinning ? "on" : "off");
         }
         saveUISettings();
       }
@@ -867,12 +1513,10 @@
         const btn = document.getElementById('monoBtn');
         if (isMonochrome) {
           btn.textContent = 'Disable Monochrome';
-          btn.style.background = '#007AFF';
           btn.classList.add('active');
           if (isHeatmap) toggleHeatmap(); // Mutually exclusive for better visibility
         } else {
           btn.textContent = 'Enable Monochrome';
-          btn.style.background = '#444';
           btn.classList.remove('active');
         }
         saveUISettings();
@@ -883,22 +1527,52 @@
         const btn = document.getElementById('heatmapBtn');
         if (isHeatmap) {
           btn.textContent = 'Disable Heatmap';
-          btn.style.background = '#ff3b30';
           btn.classList.add('active');
           if (isMonochrome) toggleMonochrome(); // Mutually exclusive
         } else {
           btn.textContent = 'Enable Heatmap';
-          btn.style.background = '#444';
           btn.classList.remove('active');
         }
         saveUISettings();
       }
 
-      function toggleGallery() {
+      function toggleAdvancedClahe() {
+        const el = document.getElementById('advancedClaheSettings');
+        if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+      }
+
+      function toggleAdvancedTnr() {
+        const el = document.getElementById('advancedTnrSettings');
+        if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+      }
+
+      function updateEdgeToggles() {
+        const panel = document.getElementById('galleryPanel');
+        const left = document.getElementById('leftEdgeToggle');
+        const right = document.getElementById('rightEdgeToggle');
+        if (!panel || !left || !right) return;
+
+        left.style.display = panel.classList.contains('collapsed') ? 'inline-flex' : 'none';
+
+        const controlsPanel = document.getElementById('controlsPanel');
+        const isMobilePortrait = window.matchMedia && window.matchMedia('(max-width: 900px) and (orientation: portrait)').matches;
+        const controlsCollapsed = !!controlsPanel && controlsPanel.classList.contains('collapsed');
+        right.style.display = (!isMobilePortrait && controlsCollapsed) ? 'inline-flex' : 'none';
+      }
+
+      function toggleGallery(forceOpen) {
         const panel = document.getElementById('galleryPanel');
         const btn = document.querySelector('.gallery-toggle');
-        panel.classList.toggle('collapsed');
+        if (!panel || !btn) return;
+        if (typeof forceOpen === 'boolean') {
+          if (forceOpen) panel.classList.remove('collapsed');
+          else panel.classList.add('collapsed');
+        } else {
+          panel.classList.toggle('collapsed');
+        }
         btn.innerHTML = panel.classList.contains('collapsed') ? '📸' : '◀';
+        try { localStorage.setItem('gallery_collapsed', panel.classList.contains('collapsed') ? '1' : '0'); } catch (_) {}
+        updateEdgeToggles();
       }
 
       function takeSnapshot() {
@@ -963,6 +1637,8 @@
           // Ensure panel is visible when taking snapshot
           document.getElementById('galleryPanel').classList.remove('collapsed');
           document.getElementById('galleryPanel').scrollTop = 0;
+          try { localStorage.setItem('gallery_collapsed', '0'); } catch (_) {}
+          updateEdgeToggles();
         })
         .catch(err => {
           console.error(err);
@@ -972,7 +1648,7 @@
 
       function togglePowerSaving() {
         const current = document.getElementById('dashPowerSaving').textContent === 'Saving';
-        fetch('/?power_saving=' + (current ? 'off' : 'on'));
+        cmd('power_saving', current ? 'off' : 'on');
         // Optimistic UI update
         const label = current ? 'Normal' : 'Saving';
         const btnLabel = current ? 'Enable Power Saving' : 'Disable Power Saving';
@@ -993,10 +1669,26 @@
         else psBtn.classList.add('active');
       }
 
+      function updateScreenModeButton(isBlack) {
+        const btn = document.getElementById('screenModeBtn');
+        if (!btn) return;
+        btn.textContent = '📱 Screen: ' + (isBlack ? 'Black' : 'Live');
+        if (isBlack) btn.classList.add('active');
+        else btn.classList.remove('active');
+      }
+
+      function toggleScreenMode() {
+        const btn = document.getElementById('screenModeBtn');
+        const isBlack = !!btn && btn.classList.contains('active');
+        cmd('screen_black', isBlack ? 'off' : 'on');
+        updateScreenModeButton(!isBlack);
+      }
+
       function updateDashboard() {
-        fetch('/status')
-          .then(res => res.json())
+        safeFetch('/status')
+          .then(res => res ? res.json() : null)
           .then(data => {
+            if (!data) return;
             document.getElementById('dashBattery').textContent = data.battery + '%' + (data.isCharging ? ' ⚡' : '');
             document.getElementById('dashTemp').textContent = data.temp.toFixed(1) + '°C';
             document.getElementById('dashBitrate').textContent = data.bitrate || '0 Mbps';
@@ -1021,18 +1713,22 @@
               document.getElementById('powerSavingItem').title = 'Power Saving Mode is OFF';
             }
 
+            if (data.screen_black !== undefined) {
+              updateScreenModeButton(!!data.screen_black);
+            }
+
             // Network Pressure Indicator
             const pressureDot = document.getElementById('pressureDot');
             if (pressureDot && data.pressure !== undefined) {
               const pressure = data.pressure;
-              if (pressure > 80) pressureDot.style.background = '#ff3b30'; // Red
-              else if (pressure > 50) pressureDot.style.background = '#ff9500'; // Orange
-              else pressureDot.style.background = '#34c759'; // Green
+              if (pressure > 80) pressureDot.style.background = '#ff453a';
+              else if (pressure > 50) pressureDot.style.background = '#ff9f0a';
+              else pressureDot.style.background = '#34c759';
             }
             const tempVal = document.getElementById('dashTemp');
-            if (data.temp > 45) tempVal.style.color = '#ff3b30';
-            else if (data.temp > 38) tempVal.style.color = '#ff9500';
-            else tempVal.style.color = '#007AFF';
+            if (data.temp > 45) tempVal.style.color = '#ff453a';
+            else if (data.temp > 38) tempVal.style.color = '#ff9f0a';
+            else tempVal.style.color = '#4da3ff';
 
             // Dynamic Focus Slider Range
             const focusDist = document.getElementById('focusDist');
@@ -1071,10 +1767,8 @@
             }
             const shutterSlider = document.getElementById('shutterSlider');
             if (shutterSlider && data.shutterMax > 0) {
-              if (parseInt(shutterSlider.max) !== data.shutterMax) {
-                shutterSlider.min = data.shutterMin;
-                shutterSlider.max = data.shutterMax;
-              }
+              shutterMinNs = data.shutterMin;
+              shutterMaxNs = data.shutterMax;
             }
 
             // Sync current manual values if they changed (e.g. lens switch or remote)
@@ -1086,7 +1780,7 @@
             }
             if (data.curShutter !== undefined) {
               const shutter = document.getElementById('shutterSlider');
-              if (shutter && document.activeElement !== shutter) shutter.value = data.curShutter;
+              if (shutter && document.activeElement !== shutter) shutter.value = shutterNsToPos(data.curShutter);
               updateExposureLabel();
             }
             if (data.curFocusDistance !== undefined) {
@@ -1404,7 +2098,7 @@
           minimapContainer.style.height = (160 * aspectRatio) + 'px';
         }
 
-        const zoom = parseFloat(document.getElementById('zoom')?.value || '1.0');
+        const zoom = parseFloat(document.getElementById('softwareZoom')?.value || '1.0');
         const widthPercent = 100 / zoom;
         const heightPercent = 100 / zoom;
         
@@ -1422,7 +2116,6 @@
         minimapViewport.style.left = left + '%';
         minimapViewport.style.top = top + '%';
         
-        // Hide minimap if no zoom
         minimapContainer.style.display = (zoom > 1.0) ? 'block' : 'none';
       }
 
@@ -1440,7 +2133,7 @@
         x = Math.max(0, Math.min(1, x));
         y = Math.max(0, Math.min(1, y));
         
-        const zoom = parseFloat(document.getElementById("zoom")?.value || "1.0");
+        const zoom = parseFloat(document.getElementById("softwareZoom")?.value || "1.0");
         if (zoom > 1.0) {
           // Map click position (0-1) to valid center range ( (1/2zoom) to (1 - 1/2zoom) )
           // This ensures the viewport reaches edges exactly when the cursor reaches minimap edges.
@@ -1458,7 +2151,7 @@
         const now = Date.now();
         if (now - lastMinimapFetch > 50 || e.type === 'mouseup' || e.type === 'touchend') {
           lastMinimapFetch = now;
-          fetch('/?zoom_focus=' + zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
+          cmd('zoom_focus', zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
         }
       }
 
@@ -1523,11 +2216,11 @@
           if (maxTorchLevel > 1) {
             torchSliderGroup.style.display = 'block';
             torchSupportNotice.innerText = 'Adjusting flash brightness (1 to ' + maxTorchLevel + ')';
-            torchSupportNotice.style.color = '#007AFF';
+            torchSupportNotice.style.color = '#4da3ff';
           } else {
             torchSliderGroup.style.display = 'none';
             torchSupportNotice.innerText = 'Multi-level brightness not supported on this device/Android version.';
-            torchSupportNotice.style.color = '#888';
+            torchSupportNotice.style.color = 'rgba(255,255,255,0.45)';
           }
         } else {
           torchStrengthContainer.style.display = 'none';
@@ -1537,9 +2230,7 @@
       if (flashBtn) {
         flashBtn.addEventListener('click', () => {
           const next = (torchState === 'on') ? 'off' : 'on';
-          try {
-            fetch('/?torch=' + next).catch(() => {});
-          } catch (_) {}
+          cmd('torch', next);
           torchState = next;
           updateFlashButton();
         });
@@ -1590,7 +2281,7 @@
       }
 
       streamCanvas.addEventListener('click', (e) => {
-        const zoom = parseFloat(document.getElementById('zoom')?.value || '1.0');
+        const zoom = parseFloat(document.getElementById('softwareZoom')?.value || '1.0');
         if (zoom <= 1.0) return; // Disable click-to-focus at 1x zoom to avoid confusion
 
         const rect = streamCanvas.getBoundingClientRect();
@@ -1609,7 +2300,7 @@
         zoomFocusY = Math.max(halfH, Math.min(1.0 - halfH, zoomFocusY));
 
         updateMinimapViewport();
-        fetch('/?zoom_focus=' + zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
+        cmd('zoom_focus', zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
       });
 
       function safeCloseImageBitmap(bmp) {
@@ -1646,36 +2337,92 @@
           const dy = Math.floor((h - dh) / 2);
           const ctx = streamCanvas.getContext('2d');
           
-          // Night Enhancement: Frame Averaging
+          // Night Enhancement: Temporal Noise Reduction (TNR)
           if (nightAvgFrames > 1) {
-            frameBuffer.push(candidate.bmp);
-            if (frameBuffer.length > nightAvgFrames) {
-              const old = frameBuffer.shift();
-              safeCloseImageBitmap(old);
+            if (tnrSmartMode) {
+              // --- Smart TNR (Motion Aware) ---
+              if (tnrAccumulationCanvas.width !== dw || tnrAccumulationCanvas.height !== dh) {
+                tnrAccumulationCanvas.width = dw;
+                tnrAccumulationCanvas.height = dh;
+                tnrAccumulationCtx.drawImage(candidate.bmp, 0, 0, dw, dh);
+              }
+
+              // 1. Detect Motion (Block-based for performance)
+              const gridSize = 16;
+              const cols = Math.ceil(dw / gridSize);
+              const rows = Math.ceil(dh / gridSize);
+              
+              // We use a small temporary canvas for motion detection if needed, 
+              // but for now, let's use a simpler per-frame motion density or just use the whole frame if smart is on.
+              // To really do scheme A (Motion Masking) naturally:
+              const tempCtx = nightProcessingCtx;
+              if (nightProcessingCanvas.width !== dw || nightProcessingCanvas.height !== dh) {
+                nightProcessingCanvas.width = dw;
+                nightProcessingCanvas.height = dh;
+              }
+              tempCtx.drawImage(candidate.bmp, 0, 0, dw, dh);
+              const currentData = tempCtx.getImageData(0, 0, dw, dh).data;
+              const historyData = tnrAccumulationCtx.getImageData(0, 0, dw, dh).data;
+              
+              // 2. Blend pixels based on difference
+              // Optimization: We only check every 2nd or 4th pixel for the mask
+              const step = 2; 
+              for (let y = 0; y < dh; y += step) {
+                for (let x = 0; x < dw; x += step) {
+                  const i = (y * dw + x) * 4;
+                  const diff = Math.abs(currentData[i] - historyData[i]) + 
+                               Math.abs(currentData[i+1] - historyData[i+1]) + 
+                               Math.abs(currentData[i+2] - historyData[i+2]);
+                  
+                  // Motion-adaptive alpha
+                  // If diff > threshold, it's motion -> use more of current frame (alpha closer to 1)
+                  // If diff < threshold, it's static -> use more of history (alpha closer to 0)
+                  let alpha = 1.0 - tnrBlendStrength; // Default blend (e.g. 0.2)
+                  if (diff > tnrMotionThreshold) {
+                    alpha = 0.8; // Fast recovery for motion
+                  }
+                  
+                  // Apply blend to accumulation buffer
+                  // We do this for a small block to keep it fast
+                  for (let by = 0; by < step && (y+by) < dh; by++) {
+                    for (let bx = 0; bx < step && (x+bx) < dw; bx++) {
+                      const bi = ((y + by) * dw + (x + bx)) * 4;
+                      historyData[bi]   = historyData[bi]   * (1 - alpha) + currentData[bi]   * alpha;
+                      historyData[bi+1] = historyData[bi+1] * (1 - alpha) + currentData[bi+1] * alpha;
+                      historyData[bi+2] = historyData[bi+2] * (1 - alpha) + currentData[bi+2] * alpha;
+                    }
+                  }
+                }
+              }
+              tnrAccumulationCtx.putImageData(new ImageData(historyData, dw, dh), 0, 0);
+              
+              ctx.clearRect(0, 0, w, h);
+              ctx.drawImage(tnrAccumulationCanvas, dx, dy, dw, dh);
+              
+            } else {
+              // --- Simple Frame Averaging (Legacy) ---
+              frameBuffer.push(candidate.bmp);
+              if (frameBuffer.length > nightAvgFrames) {
+                const old = frameBuffer.shift();
+                safeCloseImageBitmap(old);
+              }
+              ctx.clearRect(0, 0, w, h);
+              for (let i = 0; i < frameBuffer.length; i++) {
+                ctx.globalAlpha = 1.0 / (i + 1);
+                ctx.drawImage(frameBuffer[i], dx, dy, dw, dh);
+              }
+              ctx.globalAlpha = 1.0;
             }
-            
-            ctx.clearRect(0, 0, w, h);
-            // Proper mathematical average: 1/i weight progression
-            for (let i = 0; i < frameBuffer.length; i++) {
-              ctx.globalAlpha = 1.0 / (i + 1);
-              ctx.drawImage(frameBuffer[i], dx, dy, dw, dh);
-            }
-            
-            // Compensation Gain: Optionally boost the average result to act as true "Long Exposure"
-            // Since averaging reduces noise, we can now safely boost the brightness
-            if (nightGain > 0) {
-              // nightGain is already handled below, but we can add an extra multiplier here if needed
-            }
-            ctx.globalAlpha = 1.0;
           } else {
             // Normal Draw
             ctx.clearRect(0, 0, w, h);
             ctx.drawImage(candidate.bmp, dx, dy, dw, dh);
-            // Clear buffer if disabled
             if (frameBuffer.length > 0) {
               frameBuffer.forEach(safeCloseImageBitmap);
               frameBuffer = [];
             }
+            // Reset Smart TNR history if disabled
+            tnrAccumulationCanvas.width = 0; 
           }
 
           // Night Enhancement: Digital Gain Boost (Software Shadow Boost)
@@ -1736,24 +2483,29 @@
             ctx.putImageData(heatmapData, dx, dy);
           }
 
-          // Night Enhancement: Local Contrast Enhancement (CLAHE Simulation)
-          // Simplified: Grid-based contrast stretching to bring out shadow details
+          // Night Enhancement: Local Contrast Enhancement (Bilinear CLAHE Simulation)
           if (nightClahe > 0) {
             const claheData = ctx.getImageData(dx, dy, dw, dh);
             const d = claheData.data;
-            const grid = 8;
-            const tileW = Math.floor(dw / grid);
-            const tileH = Math.floor(dh / grid);
+            const grid = nightClaheGrid;
+            const tileW = dw / grid;
+            const tileH = dh / grid;
+            
+            // 1. Calculate Grid Min/Max
+            const gridMin = new Float32Array(grid * grid);
+            const gridMax = new Float32Array(grid * grid);
             
             for (let gy = 0; gy < grid; gy++) {
               for (let gx = 0; gx < grid; gx++) {
-                const tx = gx * tileW;
-                const ty = gy * tileH;
+                const tx = Math.floor(gx * tileW);
+                const ty = Math.floor(gy * tileH);
+                const tw = Math.floor(tileW);
+                const th = Math.floor(tileH);
                 
-                // 1. Find local min/max
                 let min = 255, max = 0;
-                for (let y = 0; y < tileH; y += 2) {
-                  for (let x = 0; x < tileW; x += 2) {
+                // Sub-sample for performance
+                for (let y = 0; y < th; y += 4) {
+                  for (let x = 0; x < tw; x += 4) {
                     const idx = ((ty + y) * dw + (tx + x)) * 4;
                     const luma = (d[idx] + d[idx+1] + d[idx+2]) / 3;
                     if (luma < min) min = luma;
@@ -1761,18 +2513,78 @@
                   }
                 }
                 
-                // 2. Apply local stretch
-                if (max > min + 10) {
-                  const range = max - min;
-                  for (let y = 0; y < tileH; y++) {
-                    for (let x = 0; x < tileW; x++) {
-                      const idx = ((ty + y) * dw + (tx + x)) * 4;
-                      for (let c = 0; c < 3; c++) {
-                        const val = d[idx+c];
-                        const stretched = ((val - min) / range) * 255;
-                        d[idx+c] = val + (stretched - val) * nightClahe;
-                      }
-                    }
+                // Use robust range if configured (simple version: pull min/max towards each other)
+                const range = max - min;
+                const pLow = min + range * nightClahePLow;
+                const pHigh = min + range * nightClahePHigh;
+                
+                gridMin[gy * grid + gx] = pLow;
+                gridMax[gy * grid + gx] = pHigh;
+              }
+            }
+            
+            // 2. Temporal Smoothing
+            if (nightClaheSmoothing > 0 && claheHistory) {
+              const alpha = 1.0 - nightClaheSmoothing;
+              for (let i = 0; i < gridMin.length; i++) {
+                claheHistory.min[i] = claheHistory.min[i] * nightClaheSmoothing + gridMin[i] * alpha;
+                claheHistory.max[i] = claheHistory.max[i] * nightClaheSmoothing + gridMax[i] * alpha;
+                gridMin[i] = claheHistory.min[i];
+                gridMax[i] = claheHistory.max[i];
+              }
+            } else if (nightClaheSmoothing > 0) {
+              claheHistory = { min: new Float32Array(gridMin), max: new Float32Array(gridMax) };
+            } else {
+              claheHistory = null;
+            }
+            
+            // 3. Apply Bilinear Interpolation and Stretch
+            for (let y = 0; y < dh; y++) {
+              // Find vertical grid neighbors and weight
+              let gy = (y / tileH) - 0.5;
+              let gy0 = Math.floor(gy);
+              let gy1 = gy0 + 1;
+              let wy = gy - gy0;
+              gy0 = Math.max(0, Math.min(grid - 1, gy0));
+              gy1 = Math.max(0, Math.min(grid - 1, gy1));
+              
+              for (let x = 0; x < dw; x++) {
+                // Find horizontal grid neighbors and weight
+                let gx = (x / tileW) - 0.5;
+                let gx0 = Math.floor(gx);
+                let gx1 = gx0 + 1;
+                let wx = gx - gx0;
+                gx0 = Math.max(0, Math.min(grid - 1, gx0));
+                gx1 = Math.max(0, Math.min(grid - 1, gx1));
+                
+                // Interpolate min/max
+                const i00 = gy0 * grid + gx0;
+                const i10 = gy0 * grid + gx1;
+                const i01 = gy1 * grid + gx0;
+                const i11 = gy1 * grid + gx1;
+                
+                const minI = (gridMin[i00] * (1-wx) + gridMin[i10] * wx) * (1-wy) +
+                             (gridMin[i01] * (1-wx) + gridMin[i11] * wx) * wy;
+                const maxI = (gridMax[i00] * (1-wx) + gridMax[i10] * wx) * (1-wy) +
+                             (gridMax[i01] * (1-wx) + gridMax[i11] * wx) * wy;
+                
+                const rangeI = Math.max(nightClaheMinRange, maxI - minI);
+                const idx = (y * dw + x) * 4;
+                
+                if (nightClaheLumaOnly) {
+                  const r = d[idx], g = d[idx+1], b = d[idx+2];
+                  const luma = (r + g + b) / 3;
+                  const stretchedLuma = ((luma - minI) / rangeI) * 255;
+                  const targetLuma = luma + (stretchedLuma - luma) * nightClahe;
+                  const factor = targetLuma / Math.max(1, luma);
+                  d[idx]   = Math.min(255, Math.max(0, r * factor));
+                  d[idx+1] = Math.min(255, Math.max(0, g * factor));
+                  d[idx+2] = Math.min(255, Math.max(0, b * factor));
+                } else {
+                  for (let c = 0; c < 3; c++) {
+                    const val = d[idx+c];
+                    const stretched = ((val - minI) / rangeI) * 255;
+                    d[idx+c] = Math.min(255, Math.max(0, val + (stretched - val) * nightClahe));
                   }
                 }
               }
@@ -1935,18 +2747,18 @@
         const lensSelectGroup = document.getElementById('lensSelectGroup');
         
         if (currentCamera === 'front') {
-          backBtn.className = 'btn';
-          frontBtn.className = 'btn active';
+          backBtn.classList.remove('active');
+          frontBtn.classList.add('active');
           if (lensSelectGroup) lensSelectGroup.style.display = 'none';
         } else {
-          backBtn.className = 'btn active';
-          frontBtn.className = 'btn';
+          backBtn.classList.add('active');
+          frontBtn.classList.remove('active');
           if (lensSelectGroup) lensSelectGroup.style.display = 'block';
         }
       }
 
       function setCamera(camera) {
-        fetch("/?camera=" + camera);
+        cmd("camera", camera);
         currentCamera = camera;
         updateCameraToggleBtn();
         // Trigger dashboard update to refresh focus range
@@ -1957,13 +2769,19 @@
       function updateZoom(val) {
         const v = parseFloat(val);
         document.getElementById("zoomVal").innerText = v + "x"; 
+        cmdDebounced("zoom", v, "zoom", 70);
+      }
+
+      function updateSoftwareZoom(val) {
+        const v = parseFloat(val);
+        document.getElementById("softwareZoomVal").innerText = v.toFixed(1) + "x";
         if (v <= 1.0) {
           zoomFocusX = 0.5;
           zoomFocusY = 0.5;
-          fetch("/?zoom_focus=0.500,0.500");
+          cmd("zoom_focus", "0.500,0.500");
         }
-        updateMinimapViewport(); 
-        fetch("/?zoom=" + v);
+        updateMinimapViewport();
+        cmdDebounced("software_zoom", v, "software_zoom", 70);
       }
 
       function updateFocusDist(val) {
@@ -1971,12 +2789,12 @@
         const now = Date.now();
         if (now - lastFocusFetch > 100) {
           lastFocusFetch = now;
-          fetch("/?focus_distance=" + val).catch(() => {});
+          cmd("focus_distance", val);
         }
       }
 
       function setFocusMode(mode) {
-        fetch("/?focus_mode=" + mode);
+        cmd("focus_mode", mode);
         document.getElementById('focusModeVal').textContent = mode;
         const afBtn = document.getElementById('afBtn');
         const mfBtn = document.getElementById('mfBtn');
@@ -2001,7 +2819,7 @@
         btn.textContent = 'Focusing...';
         btn.disabled = true;
         
-        fetch("/?autofocus=1")
+        cmd("autofocus", 1)
           .then(() => {
             setTimeout(() => {
               btn.textContent = originalText;
@@ -2018,12 +2836,12 @@
         const f = document.getElementById('fitBtn');
         const o = document.getElementById('origBtn');
         if (mode === 'fit') {
-          f.className = 'btn active';
-          o.className = 'btn';
+          f.classList.add('active');
+          o.classList.remove('active');
           viewMode = 'fit';
         } else {
-          f.className = 'btn';
-          o.className = 'btn active';
+          f.classList.remove('active');
+          o.classList.add('active');
           viewMode = 'original';
         }
         applyCanvasSize(targetCanvasSize(lastDrawn));
@@ -2031,6 +2849,12 @@
       }
 
       loadUISettings();
+      initCollapsibleSections();
+      try { toggleControlsSheet(localStorage.getItem('controls_sheet_open') === '1'); } catch (_) {}
+      try { toggleControlsCollapsed(localStorage.getItem('controls_panel_collapsed') === '1'); } catch (_) {}
+      try { if (localStorage.getItem('gallery_collapsed') === '1') toggleGallery(false); } catch (_) {}
+      updateEdgeToggles();
+      window.addEventListener('resize', updateEdgeToggles);
       updateCameraToggleBtn();
       updateNightSettings();
       
@@ -2047,11 +2871,9 @@
       if (binningBtn) {
         if (isBinning) {
           binningBtn.textContent = 'Disable Pixel Binning';
-          binningBtn.style.background = '#007AFF';
           binningBtn.classList.add('active');
         } else {
           binningBtn.textContent = 'Enable Pixel Binning';
-          binningBtn.style.background = '#444';
           binningBtn.classList.remove('active');
         }
       }

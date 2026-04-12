@@ -60,9 +60,17 @@ class MainActivity : AppCompatActivity() {
             streamingService?.onLog = { message ->
                 Log.i(TAG, "Service: $message")
             }
+            streamingService?.onScreenBlackChanged = { enabled ->
+                runOnUiThread {
+                    setPreviewHidden(enabled, true)
+                }
+            }
 
             // Initialize Server
             streamingService?.startStreamingServer()
+
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+            setPreviewHidden(prefs.getBoolean("screen_black_mode", false), false)
 
             // Set Preview if needed
             if (!userHiddenPreview) {
@@ -165,6 +173,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.exitButton).setOnClickListener {
             exitApp()
         }
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        setPreviewHidden(prefs.getBoolean("screen_black_mode", false), false)
     }
 
     private fun startService() {
@@ -277,7 +288,9 @@ class MainActivity : AppCompatActivity() {
         return "unknown"
     }
 
-    private fun hideShowPreview() {
+    private fun setPreviewHidden(hidden: Boolean, showToast: Boolean) {
+        if (hidden == userHiddenPreview) return
+
         val viewFinder = viewBinding.viewFinder
         val rootView = viewBinding.root
         val ipAddressText = findViewById<TextView>(R.id.ipAddressText)
@@ -285,7 +298,7 @@ class MainActivity : AppCompatActivity() {
         val hidePreviewButton = findViewById<ImageButton>(R.id.hidePreviewButton)
         val exitButton = findViewById<ImageButton>(R.id.exitButton)
 
-        if (!userHiddenPreview) {
+        if (hidden) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
             viewFinder.visibility = View.INVISIBLE
@@ -302,8 +315,10 @@ class MainActivity : AppCompatActivity() {
                 streamingService?.setPreviewSurface(null)
             }
 
-            runOnUiThread {
-                Toast.makeText(this, "Black screen, swipe back to exit", Toast.LENGTH_SHORT).show()
+            if (showToast) {
+                runOnUiThread {
+                    Toast.makeText(this, "Black screen, swipe back to exit", Toast.LENGTH_SHORT).show()
+                }
             }
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -326,6 +341,15 @@ class MainActivity : AppCompatActivity() {
                 streamingService?.setPreviewSurface(viewBinding.viewFinder.surfaceProvider)
             }
         }
+
+        PreferenceManager.getDefaultSharedPreferences(this)
+            .edit()
+            .putBoolean("screen_black_mode", userHiddenPreview)
+            .apply()
+    }
+
+    private fun hideShowPreview() {
+        setPreviewHidden(!userHiddenPreview, true)
     }
 
     private fun showNoClientMessage(show: Boolean) {

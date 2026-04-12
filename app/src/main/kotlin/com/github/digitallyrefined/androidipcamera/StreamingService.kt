@@ -96,6 +96,7 @@ class StreamingService : LifecycleService() {
     var onClientDisconnected: (() -> Unit)? = null
     var onLog: ((String) -> Unit)? = null
     var onCameraRestartNeeded: (() -> Unit)? = null
+    var onScreenBlackChanged: ((Boolean) -> Unit)? = null
 
     // Preview surface provider
     private var currentSurfaceProvider: Preview.SurfaceProvider? = null
@@ -313,6 +314,20 @@ class StreamingService : LifecycleService() {
             if (shutterRange != null) {
                 prefs.edit().putLong("camera_shutter_min", shutterRange.lower).putLong("camera_shutter_max", shutterRange.upper).apply()
                 Log.i(TAG, "Pre-detected Shutter range: ${shutterRange.lower} - ${shutterRange.upper} ns")
+            }
+
+            // FPS range
+            val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+            if (fpsRanges != null && fpsRanges.isNotEmpty()) {
+                var minFps = 1000
+                var maxFps = 0
+                fpsRanges.forEach { range ->
+                    if (range.lower < minFps) minFps = range.lower
+                    if (range.upper > maxFps) maxFps = range.upper
+                }
+                // Save the absolute min/max supported by this sensor
+                prefs.edit().putInt("camera_fps_min", minFps).putInt("camera_fps_max", maxFps).apply()
+                Log.i(TAG, "Pre-detected FPS range: $minFps - $maxFps")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to detect camera capabilities", e)
@@ -669,6 +684,7 @@ class StreamingService : LifecycleService() {
             "temp" to temp,
             "uptime" to (SystemClock.elapsedRealtime() / 1000), // seconds
             "power_saving" to prefs.getBoolean("power_saving_mode", false),
+            "screen_black" to prefs.getBoolean("screen_black_mode", false),
             "minFocusDistance" to minFocusDistance,
             "isoMin" to isoMin,
             "isoMax" to isoMax,
@@ -906,8 +922,24 @@ class StreamingService : LifecycleService() {
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
             }
 
-            // 2. Manual Exposure (ISO/Shutter)
+            // 3. FPS Control & Shutter Linkage
+            val targetFps = prefs.getInt(getLensPrefKey("camera_fps"), 30)
+            val shutterNs = prefs.getLong(getLensPrefKey("camera_shutter"), 20000000L)
             val exposureMode = prefs.getString(getLensPrefKey("camera_exposure_mode"), "auto") ?: "auto"
+            
+            // Linkage: If shutter is longer than 1/fps, we MUST reduce FPS
+            val maxFpsByShutter = (1000000000L / Math.max(1, shutterNs)).toInt()
+            val effectiveFps = if (exposureMode == "manual") {
+                Math.min(targetFps, maxFpsByShutter)
+            } else {
+                targetFps
+            }
+            
+            // Set AE Target FPS Range (Locked range for fixed FPS, or flexible for auto)
+            val fpsRange = android.util.Range(effectiveFps, effectiveFps)
+            builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange)
+            
+            // 4. Manual Exposure (ISO/Shutter)
             if (exposureMode == "manual") {
                 val iso = prefs.getInt(getLensPrefKey("camera_iso"), 400)
                 val shutterNs = prefs.getLong(getLensPrefKey("camera_shutter"), 20000000L)
@@ -991,6 +1023,12 @@ class StreamingService : LifecycleService() {
                 prefs.edit().putString(getLensPrefKey("camera_zoom"), zoomFactor.toString()).apply()
                 launchMain { cam?.cameraControl?.setZoomRatio(zoomFactor) }
             }
+            "fps" -> {
+                val fps = value.toIntOrNull() ?: return
+                prefs.edit().putInt(getLensPrefKey("camera_fps"), fps).apply()
+                Log.i(TAG, "Remote Control: Target FPS set to $fps")
+                launchMain { applyCamera2InteropSettings() }
+            }
             "software_zoom" -> {
                 val softwareZoom = value.toFloatOrNull() ?: return
                 prefs.edit().putString(getLensPrefKey("software_zoom"), softwareZoom.toString()).apply()
@@ -998,6 +1036,7 @@ class StreamingService : LifecycleService() {
             "exposure" -> {
                 val exposure = value.toIntOrNull() ?: return
                 prefs.edit().putString(getLensPrefKey("camera_exposure"), exposure.toString()).apply()
+                Log.i(TAG, "Remote Control: Exposure set to $exposure (hardware index + software boost)")
                 launchMain { cam?.cameraControl?.setExposureCompensationIndex(exposure) }
             }
             "contrast" -> {
@@ -1100,6 +1139,16 @@ class StreamingService : LifecycleService() {
                     startCamera() // Restart to apply changes
                 }
             }
+            "screen_black" -> {
+                val next = when (value.lowercase()) {
+                    "on", "1", "true" -> true
+                    "off", "0", "false" -> false
+                    "toggle" -> !prefs.getBoolean("screen_black_mode", false)
+                    else -> return
+                }
+                prefs.edit().putBoolean("screen_black_mode", next).apply()
+                launchMain { onScreenBlackChanged?.invoke(next) }
+            }
         }
     }
 
@@ -1138,7 +1187,8 @@ class StreamingService : LifecycleService() {
             val zoomFocusX = prefs.getFloat(getLensPrefKey("camera_zoom_focus_x"), 0.5f)
             val zoomFocusY = prefs.getFloat(getLensPrefKey("camera_zoom_focus_y"), 0.5f)
             val contrastValue = prefs.getString(getLensPrefKey("camera_contrast"), "0")?.toIntOrNull() ?: 0
-
+            val exposureValue = prefs.getString(getLensPrefKey("camera_exposure"), "0")?.toIntOrNull() ?: 0
+            
             // Convert YUV_420_888 to NV21
             var nv21 = convertYUV420toNV21(image)
             val crop = image.cropRect
@@ -1172,9 +1222,9 @@ class StreamingService : LifecycleService() {
             }
             lastSnapshot = jpegBytes
 
-            // Apply transformations if needed (Rotation, Scaling, Zoom, Contrast)
+            // Apply transformations if needed (Rotation, Scaling, Zoom, Contrast, Exposure)
             val uiScale = prefs.getString(getLensPrefKey("stream_scale"), "1.0")?.toFloatOrNull() ?: 1.0f
-            val needsTransform = totalRotation != 0 || uiScale != 1.0f || softwareZoom > 1.0f || contrastValue != 0 || width > targetWidth
+            val needsTransform = totalRotation != 0 || uiScale != 1.0f || softwareZoom > 1.0f || contrastValue != 0 || exposureValue != 0 || width > targetWidth
 
             if (needsTransform) {
                 try {
@@ -1215,35 +1265,53 @@ class StreamingService : LifecycleService() {
                         workingBitmap = cropped
                     }
 
-                    if (workingBitmap.width > targetWidth) {
-                        val newW = targetWidth.coerceAtLeast(1)
+                    val desiredWidth = (targetWidth.toFloat() * uiScale).toInt().coerceAtLeast(1)
+                    if (workingBitmap.width != desiredWidth) {
+                        val newW = desiredWidth.coerceAtLeast(1)
                         val newH = ((workingBitmap.height.toFloat() / workingBitmap.width.toFloat()) * newW).toInt().coerceAtLeast(1)
                         val scaled = Bitmap.createScaledBitmap(workingBitmap, newW, newH, true)
                         if (scaled !== workingBitmap) workingBitmap.recycle()
                         workingBitmap = scaled
                     }
 
-                    if (contrastValue != 0) {
+                    if (contrastValue != 0 || exposureValue != 0) {
                         val contrastFactor = 1.0f + (contrastValue / 100.0f)
+                        
+                        // Software Exposure Gain (Digital Gain)
+                        // Map -10..10 to a gain factor of 0.5x..2.0x
+                        val exposureFactor = if (exposureValue >= 0) {
+                            1.0f + (exposureValue * 0.1f) // 1.0x to 2.0x
+                        } else {
+                            1.0f + (exposureValue * 0.05f) // 0.5x to 1.0x
+                        }
+                        
                         val paint = android.graphics.Paint().apply {
                             colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply {
+                                // Combined Contrast and Brightness/Exposure Matrix
+                                // out = (in - 128) * contrastFactor + 128 + brightnessOffset
+                                // But for exposure we use a multiplier (Digital Gain)
+                                // Final: out = ((in * contrastFactor) + 128 * (1 - contrastFactor)) * exposureFactor
+                                val c = contrastFactor
+                                val e = exposureFactor
+                                val offset = 128f * (1f - c) * e
+                                
                                 set(floatArrayOf(
-                                    contrastFactor, 0f, 0f, 0f, 0f,
-                                    0f, contrastFactor, 0f, 0f, 0f,
-                                    0f, 0f, contrastFactor, 0f, 0f,
-                                    0f, 0f, 0f, 1f, 0f
+                                    c * e, 0f,    0f,    0f, offset,
+                                    0f,    c * e, 0f,    0f, offset,
+                                    0f,    0f,    c * e, 0f, offset,
+                                    0f,    0f,    0f,    1f, 0f
                                 ))
                             })
                         }
-                        val contrasted = Bitmap.createBitmap(
+                        val transformed = Bitmap.createBitmap(
                             workingBitmap.width,
                             workingBitmap.height,
                             workingBitmap.config ?: Bitmap.Config.ARGB_8888
                         )
-                        val canvas = android.graphics.Canvas(contrasted)
+                        val canvas = android.graphics.Canvas(transformed)
                         canvas.drawBitmap(workingBitmap, 0f, 0f, paint)
                         workingBitmap.recycle()
-                        workingBitmap = contrasted
+                        workingBitmap = transformed
                     }
 
                     val outputStream = java.io.ByteArrayOutputStream()
