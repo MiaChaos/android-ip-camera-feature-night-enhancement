@@ -922,6 +922,25 @@
             <div style="margin-bottom: 20px;">
               <label>Pure Monochrome Mode</label>
               <button id="monoBtn" class="btn btn-action" style="width: 100%; background: #444;" onclick="toggleMonochrome()">Enable Monochrome</button>
+              
+              <!-- Advanced Monochrome Settings Collapsible -->
+              <div id="advancedMonoContainer" style="display: none; margin-top: 10px;">
+                <button class="btn" style="width: 100%; font-size: 11px; padding: 4px; background: #333;" onclick="toggleAdvancedMono()">⚙️ Advanced Mono Settings ▾</button>
+                <div id="advancedMonoSettings" style="display: none; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-top: 5px; border: 1px solid var(--stroke-weak);">
+                  
+                  <label>Channel Balance (R-G-B) <span class='val-badge' id='monoWeightVal'>Standard</span></label>
+                  <input id="monoWeightSlider" type='range' min='0' max='2' step='1' value='1' oninput='updateNightSettings()'>
+                  <p style="font-size: 9px; color: #888;">Physiological (G-Heavy) | Uniform | Red-Infrared Boost</p>
+
+                  <label>Blue Noise Filter <span class='val-badge' id='monoBlueVal'>Normal</span></label>
+                  <input id="monoBlueSlider" type='range' min='0' max='1.0' step='0.1' value='0.5' oninput='updateNightSettings()'>
+                  <p style="font-size: 9px; color: #888;">Reduce blue channel noise in extreme low light.</p>
+
+                  <label>LAC Boost Multiplier <span class='val-badge' id='monoLacBoostVal'>1.0x</span></label>
+                  <input id="monoLacBoostSlider" type='range' min='1.0' max='3.0' step='0.2' value='1.0' oninput='updateNightSettings()'>
+                  <p style="font-size: 9px; color: #888;">Aggressive contrast specifically for monochrome view.</p>
+                </div>
+              </div>
             </div>
 
             <!-- 5. Gamma Correction (Gamma Boost) -->
@@ -1129,6 +1148,9 @@
       let zoomFocusX = parseFloat('{{CUR_ZOOM_FOCUS_X}}') || 0.5;
       let zoomFocusY = parseFloat('{{CUR_ZOOM_FOCUS_Y}}') || 0.5;
       let isDraggingMinimap = false;
+      let isDraggingCanvas = false;
+      let lastCanvasX = 0;
+      let lastCanvasY = 0;
       let lastMinimapFetch = 0;
       let nightVisionEnabled = false;
       let nightAvgFrames = 1;
@@ -1155,6 +1177,9 @@
       let lastTnrBmp = null;
       let isBinning = ('{{CUR_BINNING}}' === 'on');
       let isMonochrome = false;
+      let monoWeightMode = 1; // 0: Physiological, 1: Uniform, 2: Red Boost
+      let monoBlueFilter = 0.5;
+      let monoLacBoost = 1.0;
       let isHeatmap = false;
       let frameBuffer = [];
       let wakeLock = null;
@@ -1221,6 +1246,9 @@
             updateNightSettings();
             if (settings.isBinning) toggleBinning(true);
             if (settings.isMonochrome) toggleMonochrome();
+            if (settings.monoWeightMode) document.getElementById('monoWeightSlider').value = settings.monoWeightMode;
+            if (settings.monoBlueFilter) document.getElementById('monoBlueSlider').value = settings.monoBlueFilter;
+            if (settings.monoLacBoost) document.getElementById('monoLacBoostSlider').value = settings.monoLacBoost;
             if (settings.isHeatmap) toggleHeatmap();
             
             // Motion detection persistence
@@ -1256,6 +1284,9 @@
             nightClaheLumaOnly,
             isBinning,
             isMonochrome,
+            monoWeightMode,
+            monoBlueFilter,
+            monoLacBoost,
             isHeatmap,
             motionEnabled,
             motionSensitivity: document.getElementById('motionSensitivity').value,
@@ -1359,6 +1390,17 @@
         document.getElementById('claheSmoothVal').textContent = (smoothing * 100).toFixed(0) + '%';
 
         nightClaheLumaOnly = document.getElementById('claheLumaOnly').checked;
+
+        // Advanced Mono settings
+        monoWeightMode = parseInt(document.getElementById('monoWeightSlider').value);
+        const weightLabels = ["Physiological", "Uniform", "Red Boost"];
+        document.getElementById('monoWeightVal').textContent = weightLabels[monoWeightMode];
+        
+        monoBlueFilter = parseFloat(document.getElementById('monoBlueSlider').value);
+        document.getElementById('monoBlueVal').textContent = (monoBlueFilter * 100).toFixed(0) + '%';
+        
+        monoLacBoost = parseFloat(document.getElementById('monoLacBoostSlider').value);
+        document.getElementById('monoLacBoostVal').textContent = monoLacBoost.toFixed(1) + 'x';
 
         saveUISettings();
       }
@@ -1511,13 +1553,16 @@
       function toggleMonochrome() {
         isMonochrome = !isMonochrome;
         const btn = document.getElementById('monoBtn');
+        const advanced = document.getElementById('advancedMonoContainer');
         if (isMonochrome) {
           btn.textContent = 'Disable Monochrome';
           btn.classList.add('active');
+          if (advanced) advanced.style.display = 'block';
           if (isHeatmap) toggleHeatmap(); // Mutually exclusive for better visibility
         } else {
           btn.textContent = 'Enable Monochrome';
           btn.classList.remove('active');
+          if (advanced) advanced.style.display = 'none';
         }
         saveUISettings();
       }
@@ -1543,6 +1588,11 @@
 
       function toggleAdvancedTnr() {
         const el = document.getElementById('advancedTnrSettings');
+        if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+      }
+
+      function toggleAdvancedMono() {
+        const el = document.getElementById('advancedMonoSettings');
         if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
       }
 
@@ -2123,8 +2173,8 @@
         if (!isDraggingMinimap && e.type !== 'mousedown' && e.type !== 'touchstart') return;
         
         const rect = minimapContainer.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+        const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
         
         let x = (clientX - rect.left) / rect.width;
         let y = (clientY - rect.top) / rect.height;
@@ -2135,8 +2185,6 @@
         
         const zoom = parseFloat(document.getElementById("softwareZoom")?.value || "1.0");
         if (zoom > 1.0) {
-          // Map click position (0-1) to valid center range ( (1/2zoom) to (1 - 1/2zoom) )
-          // This ensures the viewport reaches edges exactly when the cursor reaches minimap edges.
           const halfViewport = 0.5 / zoom;
           zoomFocusX = halfViewport + (x * (1 - 2 * halfViewport));
           zoomFocusY = halfViewport + (y * (1 - 2 * halfViewport));
@@ -2145,11 +2193,12 @@
           zoomFocusY = 0.5;
         }
         
+        // Update UI immediately for responsiveness
         updateMinimapViewport();
 
         // Throttle fetches to avoid jitter and server overload
         const now = Date.now();
-        if (now - lastMinimapFetch > 50 || e.type === 'mouseup' || e.type === 'touchend') {
+        if (now - lastMinimapFetch > 40 || e.type === 'mouseup' || e.type === 'touchend') {
           lastMinimapFetch = now;
           cmd('zoom_focus', zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
         }
@@ -2280,7 +2329,63 @@
         videoDelayMs = Math.max(0, (parseFloat(avDelay.value) || 0) * 1000);
       }
 
+      function handleCanvasDrag(e) {
+        const zoom = parseFloat(document.getElementById("softwareZoom")?.value || "1.0");
+        if (zoom <= 1.0) return;
+
+        if (e.type === 'mousedown' || e.type === 'touchstart') {
+          isDraggingCanvas = true;
+          const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+          const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+          lastCanvasX = clientX;
+          lastCanvasY = clientY;
+          return;
+        }
+
+        if (!isDraggingCanvas) return;
+
+        if (e.type === 'mouseup' || e.type === 'touchend' || e.type === 'mouseleave') {
+          isDraggingCanvas = false;
+          return;
+        }
+
+        const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+        const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+        
+        const dx = clientX - lastCanvasX;
+        const dy = clientY - lastCanvasY;
+        
+        lastCanvasX = clientX;
+        lastCanvasY = clientY;
+
+        const rect = streamCanvas.getBoundingClientRect();
+        // Movement relative to canvas size and zoom level
+        // Moving mouse right (positive dx) should move the viewport left (negative zoomFocusX)
+        const moveX = (dx / rect.width) / zoom;
+        const moveY = (dy / rect.height) / zoom;
+
+        zoomFocusX = Math.max(0.5/zoom, Math.min(1.0 - 0.5/zoom, zoomFocusX - moveX));
+        zoomFocusY = Math.max(0.5/zoom, Math.min(1.0 - 0.5/zoom, zoomFocusY - moveY));
+
+        updateMinimapViewport();
+
+        const now = Date.now();
+        if (now - lastMinimapFetch > 40) {
+          lastMinimapFetch = now;
+          cmd('zoom_focus', zoomFocusX.toFixed(3) + ',' + zoomFocusY.toFixed(3));
+        }
+      }
+
+      streamCanvas.addEventListener('mousedown', handleCanvasDrag);
+      streamCanvas.addEventListener('touchstart', handleCanvasDrag, { passive: false });
+      window.addEventListener('mousemove', handleCanvasDrag);
+      window.addEventListener('touchmove', handleCanvasDrag, { passive: false });
+      window.addEventListener('mouseup', handleCanvasDrag);
+      window.addEventListener('touchend', handleCanvasDrag);
+      streamCanvas.addEventListener('mouseleave', handleCanvasDrag);
+
       streamCanvas.addEventListener('click', (e) => {
+        if (isDraggingCanvas) return; // Don't trigger focus if we were dragging
         const zoom = parseFloat(document.getElementById('softwareZoom')?.value || '1.0');
         if (zoom <= 1.0) return; // Disable click-to-focus at 1x zoom to avoid confusion
 
@@ -2445,9 +2550,24 @@
           if (isMonochrome) {
             const monoData = ctx.getImageData(dx, dy, dw, dh);
             const d = monoData.data;
+            
+            // Channel weights based on mode
+            let rw = 0.33, gw = 0.33, bw = 0.33;
+            if (monoWeightMode === 0) { // Physiological
+              rw = 0.299; gw = 0.587; bw = 0.114;
+            } else if (monoWeightMode === 2) { // Red/IR Boost
+              rw = 0.7; gw = 0.2; bw = 0.1;
+            }
+            
+            // Blue noise filter (attenuates blue channel contribution)
+            const bFactor = 1.0 - (monoBlueFilter * 0.8); // Up to 80% reduction
+            const totalW = rw + gw + (bw * bFactor);
+            
             for (let i = 0; i < d.length; i += 4) {
-              const avg = (d[i] + d[i+1] + d[i+2]) / 3;
-              d[i] = d[i+1] = d[i+2] = avg;
+              const r = d[i], g = d[i+1], b = d[i+2];
+              // Apply weighted grayscale with blue noise filtering
+              const val = (r * rw + g * gw + b * bw * bFactor) / totalW;
+              d[i] = d[i+1] = d[i+2] = Math.min(255, val);
             }
             ctx.putImageData(monoData, dx, dy);
           }
@@ -2571,11 +2691,17 @@
                 const rangeI = Math.max(nightClaheMinRange, maxI - minI);
                 const idx = (y * dw + x) * 4;
                 
+                // LAC Boost in Monochrome mode
+                let effectiveClahe = nightClahe;
+                if (isMonochrome && monoLacBoost > 1.0) {
+                  effectiveClahe = Math.min(1.0, nightClahe * monoLacBoost);
+                }
+                
                 if (nightClaheLumaOnly) {
                   const r = d[idx], g = d[idx+1], b = d[idx+2];
                   const luma = (r + g + b) / 3;
                   const stretchedLuma = ((luma - minI) / rangeI) * 255;
-                  const targetLuma = luma + (stretchedLuma - luma) * nightClahe;
+                  const targetLuma = luma + (stretchedLuma - luma) * effectiveClahe;
                   const factor = targetLuma / Math.max(1, luma);
                   d[idx]   = Math.min(255, Math.max(0, r * factor));
                   d[idx+1] = Math.min(255, Math.max(0, g * factor));
@@ -2584,7 +2710,7 @@
                   for (let c = 0; c < 3; c++) {
                     const val = d[idx+c];
                     const stretched = ((val - minI) / rangeI) * 255;
-                    d[idx+c] = Math.min(255, Math.max(0, val + (stretched - val) * nightClahe));
+                    d[idx+c] = Math.min(255, Math.max(0, val + (stretched - val) * effectiveClahe));
                   }
                 }
               }

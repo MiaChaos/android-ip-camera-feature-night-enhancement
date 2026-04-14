@@ -680,7 +680,13 @@ class StreamingServerHelper(
                 query.split("&").forEach { param ->
                     val keyValue = param.split("=")
                     if (keyValue.size == 2) {
-                        onControlCommand(keyValue[0], keyValue[1])
+                        try {
+                            val key = java.net.URLDecoder.decode(keyValue[0], "UTF-8")
+                            val value = java.net.URLDecoder.decode(keyValue[1], "UTF-8")
+                            onControlCommand(key, value)
+                        } catch (e: Exception) {
+                            onLog("Error decoding command: ${e.message}")
+                        }
                     }
                 }
                 writer.print("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nOK")

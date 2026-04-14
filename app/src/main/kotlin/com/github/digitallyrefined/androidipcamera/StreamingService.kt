@@ -1033,6 +1033,17 @@ class StreamingService : LifecycleService() {
                 val softwareZoom = value.toFloatOrNull() ?: return
                 prefs.edit().putString(getLensPrefKey("software_zoom"), softwareZoom.toString()).apply()
             }
+            "zoom_focus" -> {
+                val parts = value.split(",")
+                if (parts.size == 2) {
+                    val x = parts[0].toFloatOrNull() ?: 0.5f
+                    val y = parts[1].toFloatOrNull() ?: 0.5f
+                    prefs.edit()
+                        .putFloat(getLensPrefKey("camera_zoom_focus_x"), x)
+                        .putFloat(getLensPrefKey("camera_zoom_focus_y"), y)
+                        .apply()
+                }
+            }
             "exposure" -> {
                 val exposure = value.toIntOrNull() ?: return
                 prefs.edit().putString(getLensPrefKey("camera_exposure"), exposure.toString()).apply()
@@ -1235,66 +1246,71 @@ class StreamingService : LifecycleService() {
                         }
                     }
 
-                    var bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, options) ?: return
-
+                    val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, options) ?: return
                     val matrix = Matrix()
+                    
+                    // 1. Handle Rotation - Rotate around image center and ensure it stays in view
+                    val srcW = bitmap.width.toFloat()
+                    val srcH = bitmap.height.toFloat()
+                    
                     if (totalRotation != 0) {
+                        matrix.postTranslate(-srcW / 2f, -srcH / 2f)
                         matrix.postRotate(totalRotation.toFloat())
+                        val rotatedW = if (totalRotation % 180 != 0) srcH else srcW
+                        val rotatedH = if (totalRotation % 180 != 0) srcW else srcH
+                        matrix.postTranslate(rotatedW / 2f, rotatedH / 2f)
                     }
-                    if (uiScale != 1.0f) {
-                        matrix.postScale(uiScale, uiScale)
-                    }
-
-                    var workingBitmap = if (!matrix.isIdentity) {
-                        val transformed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                        if (transformed !== bitmap) bitmap.recycle()
-                        transformed
-                    } else {
-                        bitmap
-                    }
-
+                    
+                    val rotatedWidth = if (totalRotation % 180 != 0) srcH else srcW
+                    val rotatedHeight = if (totalRotation % 180 != 0) srcW else srcH
+                    
+                    // 2. Handle Software Zoom (Virtual PTZ)
                     if (softwareZoom > 1.0f) {
-                        val cropW = (workingBitmap.width / softwareZoom).toInt().coerceIn(1, workingBitmap.width)
-                        val cropH = (workingBitmap.height / softwareZoom).toInt().coerceIn(1, workingBitmap.height)
-                        val centerX = (zoomFocusX * workingBitmap.width).toInt()
-                        val centerY = (zoomFocusY * workingBitmap.height).toInt()
-                        val left = (centerX - cropW / 2).coerceIn(0, workingBitmap.width - cropW)
-                        val top = (centerY - cropH / 2).coerceIn(0, workingBitmap.height - cropH)
-                        val cropped = Bitmap.createBitmap(workingBitmap, left, top, cropW, cropH)
-                        if (cropped !== workingBitmap) workingBitmap.recycle()
-                        workingBitmap = cropped
-                    }
-
-                    val desiredWidth = (targetWidth.toFloat() * uiScale).toInt().coerceAtLeast(1)
-                    if (workingBitmap.width != desiredWidth) {
-                        val newW = desiredWidth.coerceAtLeast(1)
-                        val newH = ((workingBitmap.height.toFloat() / workingBitmap.width.toFloat()) * newW).toInt().coerceAtLeast(1)
-                        val scaled = Bitmap.createScaledBitmap(workingBitmap, newW, newH, true)
-                        if (scaled !== workingBitmap) workingBitmap.recycle()
-                        workingBitmap = scaled
-                    }
-
-                    if (contrastValue != 0 || exposureValue != 0) {
-                        val contrastFactor = 1.0f + (contrastValue / 100.0f)
+                        val cropW = rotatedWidth / softwareZoom
+                        val cropH = rotatedHeight / softwareZoom
                         
-                        // Software Exposure Gain (Digital Gain)
-                        // Map -10..10 to a gain factor of 0.5x..2.0x
+                        val centerX = zoomFocusX * rotatedWidth
+                        val centerY = zoomFocusY * rotatedHeight
+                        
+                        val left = (centerX - cropW / 2).coerceIn(0f, rotatedWidth - cropW)
+                        val top = (centerY - cropH / 2).coerceIn(0f, rotatedHeight - cropH)
+                        
+                        // Shift matrix to center on the crop area and then scale up to fill rotatedWidth/Height
+                        matrix.postTranslate(-left, -top)
+                        matrix.postScale(softwareZoom, softwareZoom)
+                    }
+                    
+                    // 3. Handle Resolution Scaling & UI Scale
+                    val autoScale = if (rotatedWidth > targetWidth) {
+                        targetWidth.toFloat() / rotatedWidth
+                    } else 1.0f
+                    
+                    val finalScale = autoScale * uiScale
+                    if (finalScale != 1.0f) {
+                        matrix.postScale(finalScale, finalScale)
+                    }
+                    
+                    // 4. Calculate final dimensions based on rotated image and scaling
+                    val finalW = (rotatedWidth * finalScale).toInt().coerceAtLeast(1)
+                    val finalH = (rotatedHeight * finalScale).toInt().coerceAtLeast(1)
+                    
+                    var workingBitmap = Bitmap.createBitmap(finalW, finalH, Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(workingBitmap)
+                    
+                    // 5. Apply Color Adjustments (Contrast & Exposure)
+                    val paint = if (contrastValue != 0 || exposureValue != 0) {
+                        val contrastFactor = 1.0f + (contrastValue / 100.0f)
                         val exposureFactor = if (exposureValue >= 0) {
-                            1.0f + (exposureValue * 0.1f) // 1.0x to 2.0x
+                            1.0f + (exposureValue * 0.1f)
                         } else {
-                            1.0f + (exposureValue * 0.05f) // 0.5x to 1.0x
+                            1.0f + (exposureValue * 0.05f)
                         }
                         
-                        val paint = android.graphics.Paint().apply {
+                        android.graphics.Paint().apply {
                             colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply {
-                                // Combined Contrast and Brightness/Exposure Matrix
-                                // out = (in - 128) * contrastFactor + 128 + brightnessOffset
-                                // But for exposure we use a multiplier (Digital Gain)
-                                // Final: out = ((in * contrastFactor) + 128 * (1 - contrastFactor)) * exposureFactor
                                 val c = contrastFactor
                                 val e = exposureFactor
                                 val offset = 128f * (1f - c) * e
-                                
                                 set(floatArrayOf(
                                     c * e, 0f,    0f,    0f, offset,
                                     0f,    c * e, 0f,    0f, offset,
@@ -1303,16 +1319,10 @@ class StreamingService : LifecycleService() {
                                 ))
                             })
                         }
-                        val transformed = Bitmap.createBitmap(
-                            workingBitmap.width,
-                            workingBitmap.height,
-                            workingBitmap.config ?: Bitmap.Config.ARGB_8888
-                        )
-                        val canvas = android.graphics.Canvas(transformed)
-                        canvas.drawBitmap(workingBitmap, 0f, 0f, paint)
-                        workingBitmap.recycle()
-                        workingBitmap = transformed
-                    }
+                    } else null
+                    
+                    canvas.drawBitmap(bitmap, matrix, paint)
+                    bitmap.recycle()
 
                     val outputStream = java.io.ByteArrayOutputStream()
                     workingBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
